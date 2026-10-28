@@ -193,7 +193,7 @@ describe('จองห้องจริงตั้งแต่ต้นจน�
 
     // รอรายชื่อห้องโหลดเสร็จก่อน — ระหว่างนั้นยังไม่มีห้องที่เลือก ปุ่มส่งจึงถูกปิดไว้ (ถูกต้องแล้ว)
     await waitFor(() =>
-      expect((screen.getByLabelText('ห้องประชุม') as HTMLSelectElement).value).not.toBe(''),
+      expect(screen.getAllByRole('radio').some((radio) => (radio as HTMLInputElement).checked)).toBe(true),
     );
     await user.type(await screen.findByLabelText('ชื่อผู้จอง'), 'นายทดสอบ ระบบจอง');
     // วันพุธในอนาคต ไม่ชนกับข้อมูลตั้งต้น และไม่ขึ้นกับว่าเทสรันวันไหน
@@ -328,6 +328,9 @@ describe('ช่องเลือกเวลาในฟอร์มจอง'
     expect([...end.options].every((option) => option.value > start.value)).toBe(true);
 
     // เลือกเวลาเริ่มเลยเวลาสิ้นสุดเดิม (10:00) -> สิ้นสุดต้องเลื่อนเป็นอีกหนึ่งชั่วโมง
+    // ตั้งเวลาเองก่อน เพราะฟอร์มเปิดมาที่เวลาว่างถัดไปซึ่งขึ้นกับเวลาที่รันเทส
+    fireEvent.change(start, { target: { value: '08:00' } });
+    fireEvent.change(end, { target: { value: '10:00' } });
     fireEvent.change(start, { target: { value: '15:00' } });
     expect(end.value).toBe('16:00');
   });
@@ -338,7 +341,13 @@ describe('ห้องไม่ว่าง: บอกตั้งแต่ต�
     const { user, nav } = await openApp();
     await goTo(user, nav, 'จองห้องประชุม');
 
-    // ข้อมูลตั้งต้น: ห้องประชุมใหญ่ วันนี้ 09:00-10:30 มีคนจองแล้ว ฟอร์มเปิดมาที่ 09:00-10:00
+    // ข้อมูลตั้งต้น: ห้องประชุมใหญ่ วันนี้ 09:00-10:30 มีคนจองแล้ว
+    // ฟอร์มเปิดมาที่เวลาว่างเอง จึงต้องตั้งวันนี้ 09:00 ให้ชนก่อน (เหมือนเวลาที่เลือกไว้แล้วค่อยเปลี่ยนห้อง/วัน)
+    await waitFor(() =>
+      expect(screen.getAllByRole('radio').some((radio) => (radio as HTMLInputElement).checked)).toBe(true),
+    );
+    fireEvent.change(screen.getByLabelText('วันที่'), { target: { value: toDateKey(new Date()) } });
+    fireEvent.change(screen.getByLabelText('เริ่ม'), { target: { value: '09:00' } });
     const warning = await screen.findByRole('alert', {}, { timeout: 3000 });
     expect(warning.textContent).toContain('ห้องนี้ไม่ว่างเวลา 09:00–10:30 น.');
     await user.click(screen.getByLabelText(/ข้าพเจ้าจะดูแลรักษาทรัพย์สิน/));

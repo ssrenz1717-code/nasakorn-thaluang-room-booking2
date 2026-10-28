@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useState, type FormEvent, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, DoorOpen, Search } from 'lucide-react';
 import { toDateKey } from '@shared/time/bangkok';
-import { businessWindow } from '@shared/domain/booking-rules';
 import type { SystemSettings } from '@shared/schemas/settings';
 import { TimeSelect } from '../components/ui/TimeSelect';
 import { RoomAvailability } from '../components/ui/RoomAvailability';
 import { useRoomAvailability } from '../lib/hooks/useRoomAvailability';
-import { conflictingSlots, isEndBlocked, isStartBlocked, type BusySlot } from '@shared/domain/availability';
+import { conflictingSlots, isEndBlocked, isStartBlocked } from '@shared/domain/availability';
 import { ROOM_EQUIPMENT_LABEL_TH } from '@shared/schemas/room';
 import { REQUEST_FACILITIES, REQUEST_FACILITY_LABEL_TH, type BookingRequest, type RequestFacility } from '@shared/schemas/booking';
 import { useApp, useCurrentUser, useSettings } from '../app/providers/AppProvider';
@@ -16,50 +15,17 @@ import { Button } from '../components/ui/Button';
 import { Card, CardBody } from '../components/ui/Card';
 import { Alert } from '../components/ui/Alert';
 import type { DemoBooking, DemoRoom } from '../lib/api/demo';
+import { ROOM_BANDS } from './booking/roomBands';
+import { adjustEndTime, asMinute, endTimeOptions, startTimeOptions, timeText } from './booking/timeOptions';
+
+export { BookingPage } from './booking/BookingPage';
 
 const inputClass = 'min-h-11 w-full rounded-control border border-line bg-surface px-3 text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20';
 const labelClass = 'mb-1.5 block text-sm font-medium text-ink';
-const timeText = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 const dateText = (key: string) => new Intl.DateTimeFormat('th-TH', { dateStyle: 'long', timeZone: 'Asia/Bangkok' }).format(new Date(`${key}T12:00:00+07:00`));
 const dateKeyOf = (date: Date) => `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,'0')}-${String(date.getUTCDate()).padStart(2,'0')}`;
 const dateFromKey = (key: string) => new Date(`${key}T12:00:00Z`);
 const shiftDate = (key: string, amount: number) => { const date=dateFromKey(key); date.setUTCDate(date.getUTCDate()+amount); return dateKeyOf(date); };
-
-/** สีประจำห้อง (สีหมวดหมู่ ไม่ใช่สถานะ) — เลี่ยงเหลือง/เขียว/แดงที่ใช้บอกสถานะการจอง */
-const ROOM_BANDS = [
-  'from-sky-500 to-blue-700',
-  'from-cyan-500 to-teal-700',
-  'from-blue-700 to-blue-950',
-  'from-teal-500 to-cyan-800',
-  'from-sky-400 to-blue-600',
-];
-
-/** "09:30" -> 570 */
-const asMinute = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
-
-/** เวลาเริ่มที่เลือกได้: ทุกช่วงความละเอียด ตั้งแต่เปิดทำการ จนถึงเวลาที่ยังจองขั้นต่ำได้ทัน */
-function startTimeOptions(settings: SystemSettings): number[] {
-  const { startMin, endMin } = businessWindow(settings);
-  const options: number[] = [];
-  for (let minute = startMin; minute + settings.minBookingMinutes <= endMin; minute += settings.slotMinutes) options.push(minute);
-  return options;
-}
-
-/** เวลาสิ้นสุดที่เลือกได้: หลังเวลาเริ่มอย่างน้อยเท่าความยาวขั้นต่ำ ไม่เกินเวลาปิดและความยาวสูงสุด */
-function endTimeOptions(settings: SystemSettings, startMinute: number): number[] {
-  const { endMin } = businessWindow(settings);
-  const last = Math.min(endMin, startMinute + settings.maxBookingMinutes);
-  const options: number[] = [];
-  for (let minute = startMinute + settings.minBookingMinutes; minute <= last; minute += settings.slotMinutes) options.push(minute);
-  return options;
-}
-
-/** เปลี่ยนเวลาเริ่มแล้วเวลาสิ้นสุดเดิมใช้ไม่ได้ -> เลื่อนให้เป็นอีกหนึ่งชั่วโมง (หรือใกล้ที่สุดที่เลือกได้) */
-function adjustEndTime(settings: SystemSettings, startMinute: number, currentEnd: number, busy: BusySlot[] = []): number {
-  const options = endTimeOptions(settings, startMinute).filter((minute) => !isEndBlocked(startMinute, minute, busy));
-  if (options.includes(currentEnd)) return currentEnd;
-  return options.find((minute) => minute >= startMinute + 60) ?? options[options.length - 1] ?? startMinute + settings.slotMinutes;
-}
 
 export function RoomsPage() {
   const { api, token } = useApp();
@@ -77,37 +43,6 @@ export function RoomsPage() {
     </CardBody></Card>)}</div>
     {!rooms.length && !error && <p className="py-12 text-center text-ink-muted">กำลังโหลดห้องประชุม…</p>}
   </>;
-}
-
-export function BookingPage() {
-  const { api, token, settings } = useApp(); const user = useCurrentUser(); const nav = useNavigate();
-  const params = new URLSearchParams(window.location.search);
-  const [rooms, setRooms] = useState<DemoRoom[]>([]); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
-  const [roomId, setRoomId] = useState(params.get('room') || ''); const [dateKey, setDateKey] = useState(toDateKey(new Date()));
-  const [start, setStart] = useState('09:00'); const [end, setEnd] = useState('10:00'); const [bookerName, setBookerName] = useState(''); const [attendees, setAttendees] = useState('2'); const [note, setNote] = useState('');
-  const [requestedFacilities,setRequestedFacilities]=useState<RequestFacility[]>([]); const [extraFurnitureCount,setExtraFurnitureCount]=useState('0'); const [otherFacility,setOtherFacility]=useState(''); const [termsAccepted,setTermsAccepted]=useState(false);
-  useEffect(() => { api.rooms(token).then(({ rooms: data }) => { setRooms(data.filter((r) => r.status === 'active')); if (!roomId && data.length) setRoomId(data.find((r) => r.status === 'active')?.roomId || ''); }).catch((e: Error) => setError(e.message)); }, [api, token]);
-  const room = rooms.find((r) => r.roomId === roomId);
-  // ห้องว่างไหม: บอกตั้งแต่ตอนกรอก เวลาที่ชนเลือกไม่ได้ และกดส่งไม่ได้ถ้ายังชน
-  const { busy: busySlots, loading: checkingRoom } = useRoomAvailability(roomId, dateKey);
-  const roomConflict = conflictingSlots({ startMin: asMinute(start), endMin: asMinute(end) }, busySlots).length > 0;
-  const submit = async (event: FormEvent) => { event.preventDefault(); setBusy(true); setError('');
-    const asMin = (time: string) => Number(time.slice(0,2))*60 + Number(time.slice(3,5));
-    try { await api.createBooking(token, { bookerName, title: '', roomId, dateKey, startMin: asMin(start), endMin: asMin(end), attendees: Number(attendees), department: user.department, requesterPosition: '', requesterPhone: '', note, equipment: [], requestedFacilities, extraFurnitureCount:Number(extraFurnitureCount), otherFacility, termsAccepted }); nav('/my-bookings', { state: { success: 'ส่งคำขอจองเรียบร้อยแล้ว' } }); }
-    catch (e) { setError(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ'); } finally { setBusy(false); }
-  };
-  return <><PageHeader title="จองห้องประชุม" description="กรอกรายละเอียดการประชุม ระบบจะตรวจเวลาและเงื่อนไขก่อนบันทึก" />
-    <Card><CardBody className="p-5 sm:p-7"><form className="space-y-5" onSubmit={submit}>
-      {error && <Alert tone="danger" title="จองไม่สำเร็จ">{error}</Alert>}
-            <div><label className={labelClass} htmlFor="booker-name">ชื่อผู้จอง</label><input className={inputClass} id="booker-name" required maxLength={100} autoComplete="name" value={bookerName} onChange={(event)=>setBookerName(event.target.value)} placeholder="ชื่อ-นามสกุล ผู้จอง"/></div>
-      <div className="grid gap-4 sm:grid-cols-2"><div><label className={labelClass} htmlFor="room">ห้องประชุม</label><select className={inputClass} id="room" required value={roomId} onChange={(e) => setRoomId(e.target.value)}>{rooms.map((r)=><option key={r.roomId} value={r.roomId}>{r.name} · {r.capacity} คน</option>)}</select>{room && <p className="mt-1 text-xs text-ink-muted">{room.location} · รองรับ {room.capacity} คน{room.equipment.length>0 && ` · มี ${room.equipment.map((key)=>ROOM_EQUIPMENT_LABEL_TH[key]).join(', ')}`}</p>}</div><div><label className={labelClass} htmlFor="date">วันที่</label><input className={inputClass} id="date" type="date" required value={dateKey} onChange={(e)=>setDateKey(e.target.value)}/></div></div>
-      <div className="grid gap-4 sm:grid-cols-3"><div><label className={labelClass} htmlFor="start">เริ่ม</label><TimeSelect className={inputClass} id="start" value={start} options={startTimeOptions(settings!)} isDisabled={(minute)=>isStartBlocked(minute,settings!.minBookingMinutes,busySlots)} onChange={(value)=>{setStart(value);setEnd(timeText(adjustEndTime(settings!,asMinute(value),asMinute(end),busySlots)));}}/></div><div><label className={labelClass} htmlFor="end">สิ้นสุด</label><TimeSelect className={inputClass} id="end" value={end} options={endTimeOptions(settings!,asMinute(start))} isDisabled={(minute)=>isEndBlocked(asMinute(start),minute,busySlots)} onChange={setEnd}/></div><div><label className={labelClass} htmlFor="attendees">ผู้เข้าร่วม</label><input className={inputClass} id="attendees" type="number" inputMode="numeric" required min="1" max={room?.capacity || 1000} value={attendees} onChange={(e)=>setAttendees(e.target.value)}/></div></div>
-      <RoomAvailability busy={busySlots} loading={checkingRoom} startMin={asMinute(start)} endMin={asMinute(end)} settings={settings!} onPick={(startMin,endMin)=>{setStart(timeText(startMin));setEnd(timeText(endMin));}}/>
-      <fieldset><legend className={labelClass}>ครุภัณฑ์/อุปกรณ์/สิ่งอำนวยความสะดวกที่ขอใช้</legend><div className="grid gap-2 sm:grid-cols-2">{REQUEST_FACILITIES.map((key)=><label key={key} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-control border border-line px-3 text-sm transition-colors duration-150 has-[:checked]:border-ok-border has-[:checked]:bg-ok-soft has-[:checked]:font-medium has-[:checked]:text-ok"><input type="checkbox" checked={requestedFacilities.includes(key)} onChange={()=>setRequestedFacilities((current)=>current.includes(key)?current.filter((item)=>item!==key):[...current,key])}/>{REQUEST_FACILITY_LABEL_TH[key]}</label>)}</div><div className="mt-3 grid gap-4 sm:grid-cols-2"><div><label className={labelClass} htmlFor="extra-furniture">โต๊ะ/เก้าอี้เพิ่มเติม (ตัว)</label><input className={inputClass} id="extra-furniture" type="number" inputMode="numeric" min="0" max="500" value={extraFurnitureCount} onChange={(e)=>setExtraFurnitureCount(e.target.value)}/></div><div><label className={labelClass} htmlFor="other-facility">อุปกรณ์อื่น ๆ</label><input className={inputClass} id="other-facility" maxLength={300} value={otherFacility} onChange={(e)=>setOtherFacility(e.target.value)} placeholder="ระบุเพิ่มเติมถ้ามี"/></div></div></fieldset>
-      <div><label className={labelClass} htmlFor="note">รายละเอียดเพิ่มเติม</label><textarea className={`${inputClass} min-h-24 py-2`} id="note" maxLength={1000} value={note} onChange={(e)=>setNote(e.target.value)} placeholder="วาระการประชุมหรือข้อมูลที่ต้องแจ้งผู้ดูแล"/></div>
-      <label className="flex cursor-pointer items-start gap-2 rounded-control border border-line p-3 text-sm leading-5 text-ink-muted transition-colors duration-150 has-[:checked]:border-ok-border has-[:checked]:bg-ok-soft has-[:checked]:font-medium has-[:checked]:text-ok"><input className="mt-1" type="checkbox" required checked={termsAccepted} onChange={(e)=>setTermsAccepted(e.target.checked)}/><span>ข้าพเจ้าจะดูแลรักษาทรัพย์สินของทางราชการ และปฏิบัติตามระเบียบของวิทยาลัยทุกประการ</span></label>
-      <div className="sticky bottom-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom))] z-10 -mx-5 flex gap-3 border-t border-line bg-surface/95 px-5 py-3 backdrop-blur sm:-mx-7 sm:justify-end sm:px-7 lg:static lg:mx-0 lg:bg-transparent lg:px-0 lg:pt-5 lg:pb-0 lg:backdrop-blur-none"><Button variant="secondary" onClick={()=>nav(-1)}>กลับ</Button><Button className="flex-1 sm:flex-none" type="submit" loading={busy} loadingLabel="กำลังบันทึก" disabled={!roomId||!termsAccepted||roomConflict}>ส่งคำขอจอง</Button></div>
-    </form></CardBody></Card></>;
 }
 
 export function BookingsPage({ calendar = false }: { calendar?: boolean }) {
