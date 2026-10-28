@@ -145,6 +145,13 @@
     border-radius: 4px;
   }
 
+  /* ช่องติ๊กใช้สีเขียวเดียวกับกรอบที่เปลี่ยนตอนเลือก (สีเขียว = เลือกแล้ว ทั้งระบบ) */
+  input[type='checkbox'] {
+    accent-color: var(--color-ok);
+    width: 1.05rem;
+    height: 1.05rem;
+  }
+
   /* Tailwind v4 ตั้งเคอร์เซอร์ปุ่มเป็นลูกศร — เปลี่ยนเป็นรูปมือให้รู้ว่ากดได้ */
   button:not(:disabled),
   [role='button']:not([aria-disabled='true']),
