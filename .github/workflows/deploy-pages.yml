@@ -1,0 +1,83 @@
+name: ตรวจและเผยแพร่หน้าเว็บขึ้น GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# เผยแพร่ทีละชุด ถ้ามี push ใหม่เข้ามาให้ยกเลิกชุดที่ยังทำไม่เสร็จ
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ตรวจคุณภาพและ build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # ---- ตรวจ domain logic ก่อน ถ้าเทสไม่ผ่านต้องไม่เผยแพร่ ----
+      - name: ติดตั้ง dependency ของ domain logic
+        run: npm ci
+
+      - name: ตรวจ type และรันเทส domain logic
+        run: npm run verify
+
+      - name: สร้าง Domain.gs ให้ตรงกับโค้ดล่าสุด
+        run: npm run build:domain
+
+      - name: ตรวจว่า Domain.gs ที่ commit ไว้ตรงกับโค้ดจริง
+        # ถ้าไม่ตรง แปลว่ามีคนแก้ shared/ แล้วลืมรัน npm run build:domain
+        # ฝั่ง Apps Script จะใช้ตรรกะเวอร์ชันเก่าโดยไม่มีใครรู้ จึงต้องให้ build พังที่นี่
+        run: |
+          if ! git diff --quiet -- apps-script/Domain.gs; then
+            echo "::error::apps-script/Domain.gs ไม่ตรงกับ shared/ — รัน 'npm run build:domain' แล้ว commit ใหม่"
+            git --no-pager diff --stat -- apps-script/Domain.gs
+            exit 1
+          fi
+          echo "Domain.gs ตรงกับโค้ดล่าสุด"
+
+      # ---- ตรวจและ build หน้าเว็บ ----
+      - name: ติดตั้ง dependency ของหน้าเว็บ
+        working-directory: web
+        run: npm ci
+
+      - name: ตรวจ type และรันเทสหน้าเว็บ
+        working-directory: web
+        run: npm run verify
+
+      - name: build หน้าเว็บ
+        working-directory: web
+        # ถ้ายังไม่ตั้งค่าสองตัวนี้ใน Settings > Secrets and variables > Actions > Variables
+        # หน้าเว็บจะ build ออกมาเป็นโหมดสาธิตโดยอัตโนมัติ และบอกผู้ใช้ตรง ๆ ว่ายังไม่เชื่อมต่อ
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: web/dist
+
+  deploy:
+    name: เผยแพร่
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

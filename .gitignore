@@ -1,0 +1,18 @@
+node_modules/
+dist/
+coverage/
+.DS_Store
+
+# ความลับ — ห้าม commit เด็ดขาด
+.env
+.env.*
+!.env.example
+*serviceAccount*.json
+*service-account*.json
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# clasp — มี Script ID ของโปรเจกต์จริง ไม่ต้องขึ้น repo
+apps-script/.clasp.json
