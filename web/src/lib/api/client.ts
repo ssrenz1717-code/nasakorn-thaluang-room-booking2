@@ -5,6 +5,7 @@ import { createHttpTransport } from './transport';
 import type { BootstrapResult, LoginResult, SessionUser, Transport, VersionResult } from './types';
 import type { DemoBooking, DemoRoom } from './demo';
 import type { BookingRequest } from '@shared/schemas/booking';
+import type { BusySlot } from '@shared/domain/availability';
 
 /**
  * ส่งสัญญาณทั้งแอปเมื่อรายการจองเปลี่ยน (จอง/ยกเลิก/อนุมัติ/ปฏิเสธ)
@@ -30,6 +31,8 @@ export interface ApiClient {
   version(): Promise<VersionResult>;
   rooms(token: string): Promise<{ rooms: DemoRoom[] }>;
   bookings(token: string, from?: string, to?: string): Promise<{ bookings: DemoBooking[] }>;
+  /** ช่วงเวลาที่ห้องถูกจองไว้ในวันนั้น (ไม่มีชื่อ/หัวข้อของใคร ทุกคนดูได้) */
+  availability(token: string, roomId: string, dateKey: string): Promise<{ busy: BusySlot[] }>;
   createBooking(token: string, input: BookingRequest): Promise<{ booking: DemoBooking }>;
   cancelBooking(token: string, bookingId: string, reason?: string): Promise<{ booking: DemoBooking }>;
   decideBooking(token: string, bookingId: string, decision: 'approve'|'reject', reason?: string): Promise<{ booking: DemoBooking }>;
@@ -46,6 +49,7 @@ function wrap(transport: Transport): ApiClient {
     version: () => transport.version(),
     rooms: (token) => transport.call('rooms', {}, token),
     bookings: (token, from, to) => transport.call('bookings', { from, to }, token),
+    availability: (token, roomId, dateKey) => transport.call('availability', { roomId, dateKey }, token),
     createBooking: (token, input) => announceBookingsChanged(transport.call('createBooking', input, token)),
     cancelBooking: (token, bookingId, reason = '') => announceBookingsChanged(transport.call('cancelBooking', { bookingId, reason }, token)),
     decideBooking: (token, bookingId, decision, reason = '') => announceBookingsChanged(transport.call('decideBooking', { bookingId, decision, reason }, token)),

@@ -141,3 +141,21 @@ export function validateDecideBookingInput(raw: unknown): ValidationResult<Decid
     reason: check.string('reason', input.reason, { label: 'เหตุผล', max: 500, fallback: '' }),
   });
 }
+
+export interface AvailabilityInput {
+  roomId: string;
+  dateKey: string;
+}
+
+export function validateAvailabilityInput(raw: unknown): ValidationResult<AvailabilityInput> {
+  const input = asRecord(raw);
+  const check = new Check();
+  return check.result({
+    roomId: check.string('roomId', input.roomId, { label: 'ห้องประชุม' }),
+    dateKey: check.string('dateKey', input.dateKey, {
+      label: 'วันที่',
+      pattern: DATE_KEY_PATTERN,
+      patternMessage: 'วันที่ต้องอยู่ในรูปแบบ YYYY-MM-DD',
+    }),
+  });
+}

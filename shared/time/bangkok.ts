@@ -93,6 +93,20 @@ export function toDateKey(instant: Date, timeZone: string = BANGKOK_TZ): string 
   return `${p.year}-${pad(p.month)}-${pad(p.day)}`;
 }
 
+/**
+ * แปลงค่าวันที่ที่อ่านจากชีตให้เป็น "YYYY-MM-DD" เสมอ
+ *
+ * Google Sheets มักแปลงข้อความ "2026-10-28" เป็นค่าวันที่ให้เอง อ่านกลับมาจึงได้ Date
+ * ไม่ใช่ข้อความเดิม ถ้าเทียบตรง ๆ จะไม่เจอการจองที่ชนกัน ซึ่งคือช่องให้จองซ้ำ
+ * จึงต้องผ่านฟังก์ชันนี้ทุกครั้งที่อ่าน dateKey จากชีต
+ */
+export function normalizeDateKey(value: unknown, timeZone: string = BANGKOK_TZ): string {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? '' : toDateKey(value, timeZone);
+  const text = String(value ?? '').replace(/^'/, '').trim();
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(text);
+  return match?.[1] ?? text;
+}
+
 /** นาทีนับจากเที่ยงคืนตามเวลาไทยของ instant นั้น (0-1439) */
 export function toMinutesOfDay(instant: Date, timeZone: string = BANGKOK_TZ): number {
   const p = zonedParts(instant, timeZone);

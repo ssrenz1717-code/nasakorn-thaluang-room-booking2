@@ -15,7 +15,7 @@ function listRooms_(user) {
 
 function publicBooking_(row) {
   return {
-    bookingId: String(row.bookingId), roomId: String(row.roomId), dateKey: String(row.dateKey),
+    bookingId: String(row.bookingId), roomId: String(row.roomId), dateKey: Domain.normalizeDateKey(row.dateKey),
     startMin: Number(row.startMin), endMin: Number(row.endMin), status: String(row.status),
     title: String(row.title || ''), bookerName: String(row.bookerName || row.userName),
     userEmail: String(row.userEmail), userName: String(row.userName),
@@ -34,8 +34,20 @@ function listBookings_(user, payload) {
   const to = typeof payload.to === 'string' ? payload.to : '';
   return { bookings: rows.filter(function (row) {
     return (user.role === 'admin' || String(row.userEmail) === user.email) &&
-      (!from || String(row.dateKey) >= from) && (!to || String(row.dateKey) <= to);
+      (!from || Domain.normalizeDateKey(row.dateKey) >= from) && (!to || Domain.normalizeDateKey(row.dateKey) <= to);
   }).map(publicBooking_) };
+}
+
+/**
+ * ช่วงเวลาที่ห้องถูกจองไว้ในวันนั้น — ให้ฟอร์มจองบอกผู้ใช้ตั้งแต่ตอนกรอก
+ * ทุกคนที่ล็อกอินเรียกได้ เพราะส่งกลับแค่ช่วงเวลาและสถานะ ไม่มีชื่อหรือหัวข้อของใคร
+ * การตัดสินจริงยังอยู่ที่ createBooking_ ซึ่งตรวจซ้ำในล็อกเสมอ
+ */
+function roomAvailability_(user, raw) {
+  const parsed = Domain.validateAvailabilityInput(raw);
+  if (!parsed.ok) throw appError_(ERROR_CODES.VALIDATION, 'ข้อมูลไม่ถูกต้อง', parsed.issues);
+  const rows = readHotColumns_(Domain.SHEET_BOOKINGS, Domain.BOOKING_HOT_COLUMNS).objects;
+  return { busy: Domain.busySlotsFor(rows, parsed.value.roomId, parsed.value.dateKey) };
 }
 
 function createBooking_(user, raw) {
@@ -57,7 +69,7 @@ function createBooking_(user, raw) {
     });
     if (!ruleResult.ok) throw appError_(ERROR_CODES.VALIDATION, 'ไม่ผ่านเงื่อนไขการจอง', ruleResult.issues);
     const conflicts = bookingRows.filter(function (row) {
-      return String(row.roomId) === room.roomId && String(row.dateKey) === input.dateKey &&
+      return String(row.roomId) === room.roomId && Domain.normalizeDateKey(row.dateKey) === input.dateKey &&
         ['pending', 'confirmed'].indexOf(String(row.status)) >= 0 &&
         Domain.overlaps(input, { startMin: Number(row.startMin), endMin: Number(row.endMin) });
     });
@@ -99,7 +111,7 @@ function cancelBooking_(user, payload) {
     }
     const settings = readSettings_();
     const cancelRule = Domain.canCancelBooking({
-      startInstant: Domain.fromDateKeyAndMinutes(String(row.dateKey), Number(row.startMin)),
+      startInstant: Domain.fromDateKeyAndMinutes(Domain.normalizeDateKey(row.dateKey), Number(row.startMin)),
       now: serverNow_(), settings: settings, isAdmin: user.role === 'admin',
     });
     if (!cancelRule.ok) throw appError_(ERROR_CODES.FORBIDDEN, cancelRule.message);

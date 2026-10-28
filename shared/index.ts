@@ -7,6 +7,7 @@ export * from './auth/session';
 export * from './time/bangkok';
 export * from './domain/overlap';
 export * from './domain/status';
+export * from './domain/availability';
 export * from './domain/booking-rules';
 export * from './domain/utilization';
 export * from './schemas/settings';

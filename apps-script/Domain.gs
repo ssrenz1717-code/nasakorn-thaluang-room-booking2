@@ -59,9 +59,11 @@ var Domain = (() => {
     bookedMinutesWithin: () => bookedMinutesWithin,
     buildHeaderMap: () => buildHeaderMap,
     businessWindow: () => businessWindow,
+    busySlotsFor: () => busySlotsFor,
     canCancelBooking: () => canCancelBooking,
     canTransition: () => canTransition,
     computeUtilization: () => computeUtilization,
+    conflictingSlots: () => conflictingSlots,
     constantTimeEquals: () => constantTimeEquals,
     countDaysInclusive: () => countDaysInclusive,
     countsAsUsage: () => countsAsUsage,
@@ -76,10 +78,13 @@ var Domain = (() => {
     fromDateKeyAndMinutes: () => fromDateKeyAndMinutes,
     holdsRoomLock: () => holdsRoomLock,
     isBookableRoomStatus: () => isBookableRoomStatus,
+    isEndBlocked: () => isEndBlocked,
     isFinalStatus: () => isFinalStatus,
+    isStartBlocked: () => isStartBlocked,
     keyValueToObject: () => keyValueToObject,
     mergeIntervals: () => mergeIntervals,
     missingColumns: () => missingColumns,
+    normalizeDateKey: () => normalizeDateKey,
     objectToRow: () => objectToRow,
     overlaps: () => overlaps,
     parseTimeOfDay: () => parseTimeOfDay,
@@ -99,6 +104,7 @@ var Domain = (() => {
     toDateKey: () => toDateKey,
     toMinutesOfDay: () => toMinutesOfDay,
     tzOffsetMinutes: () => tzOffsetMinutes,
+    validateAvailabilityInput: () => validateAvailabilityInput,
     validateBookingRequest: () => validateBookingRequest,
     validateBookingRules: () => validateBookingRules,
     validateCancelBookingInput: () => validateCancelBookingInput,
@@ -270,8 +276,9 @@ var Domain = (() => {
   function sanitizeForSheet(value) {
     if (typeof value !== "string" || value === "") return value;
     const first = value.charAt(0);
-    if (FORMULA_TRIGGERS.indexOf(first) === -1) return value;
-    return `${TEXT_GUARD}${value}`;
+    if (FORMULA_TRIGGERS.indexOf(first) !== -1) return `${TEXT_GUARD}${value}`;
+    if (/^\d{4}-\d{2}-\d{2}/.test(value) || /^0\d+$/.test(value)) return `${TEXT_GUARD}${value}`;
+    return value;
   }
   function readString(object, key) {
     const value = object[key];
@@ -799,6 +806,13 @@ var Domain = (() => {
     const pad = (n) => String(n).padStart(2, "0");
     return `${p.year}-${pad(p.month)}-${pad(p.day)}`;
   }
+  function normalizeDateKey(value, timeZone = BANGKOK_TZ) {
+    var _a;
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? "" : toDateKey(value, timeZone);
+    const text = String(value != null ? value : "").replace(/^'/, "").trim();
+    const match = /^(\d{4}-\d{2}-\d{2})/.exec(text);
+    return (_a = match == null ? void 0 : match[1]) != null ? _a : text;
+  }
   function toMinutesOfDay(instant, timeZone = BANGKOK_TZ) {
     const p = zonedParts(instant, timeZone);
     return p.hour * 60 + p.minute;
@@ -962,6 +976,26 @@ var Domain = (() => {
   var USAGE_STATUSES = ["confirmed", "completed"];
   function countsAsUsage(status) {
     return USAGE_STATUSES.includes(status);
+  }
+
+  // shared/domain/availability.ts
+  function busySlotsFor(rows, roomId, dateKey, excludeBookingId) {
+    return rows.filter(
+      (row) => String(row.roomId) === roomId && normalizeDateKey(row.dateKey) === dateKey && LOCK_HOLDING_STATUSES.includes(String(row.status)) && (excludeBookingId === void 0 || String(row.bookingId) !== excludeBookingId)
+    ).map((row) => ({
+      startMin: Number(row.startMin),
+      endMin: Number(row.endMin),
+      status: String(row.status)
+    })).filter((slot) => Number.isFinite(slot.startMin) && Number.isFinite(slot.endMin)).sort((a, b) => a.startMin - b.startMin);
+  }
+  function conflictingSlots(requested, busy) {
+    return busy.filter((slot) => overlaps(requested, slot));
+  }
+  function isStartBlocked(startMin, minBookingMinutes, busy) {
+    return conflictingSlots({ startMin, endMin: startMin + minBookingMinutes }, busy).length > 0;
+  }
+  function isEndBlocked(startMin, endMin, busy) {
+    return conflictingSlots({ startMin, endMin }, busy).length > 0;
   }
 
   // shared/schemas/room.ts
@@ -1267,6 +1301,18 @@ var Domain = (() => {
       bookingId: check.string("bookingId", input.bookingId, { label: "\u0E23\u0E2B\u0E31\u0E2A\u0E01\u0E32\u0E23\u0E08\u0E2D\u0E07" }),
       decision: check.oneOf("decision", input.decision, BOOKING_DECISIONS, { label: "\u0E01\u0E32\u0E23\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19" }),
       reason: check.string("reason", input.reason, { label: "\u0E40\u0E2B\u0E15\u0E38\u0E1C\u0E25", max: 500, fallback: "" })
+    });
+  }
+  function validateAvailabilityInput(raw) {
+    const input = asRecord(raw);
+    const check = new Check();
+    return check.result({
+      roomId: check.string("roomId", input.roomId, { label: "\u0E2B\u0E49\u0E2D\u0E07\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21" }),
+      dateKey: check.string("dateKey", input.dateKey, {
+        label: "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48",
+        pattern: DATE_KEY_PATTERN,
+        patternMessage: "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A YYYY-MM-DD"
+      })
     });
   }
   return __toCommonJS(index_exports);

@@ -78,8 +78,8 @@ export function DashboardPage() {
   const facilityTotal=facilityStats.reduce((sum,item)=>sum+item.count,0);
   // สัดส่วนที่วาดไปแล้วของวงกลม 0 -> 1 เริ่มวนเมื่อมีข้อมูล
   const sweep=useAnimatedNumber(facilityTotal>0?1:0,{duration:1100});
-  let donutCursor=0;
-  const donutStops=facilityStats.map((item,index)=>{const start=facilityTotal?donutCursor/facilityTotal*100*sweep:0;donutCursor+=item.count;const end=facilityTotal?donutCursor/facilityTotal*100*sweep:0;return `${donutColors[index%donutColors.length]} ${start}% ${end}%`;}).join(', ');
+  // ชิ้นในวงกลมที่กำลังชี้อยู่ (ชี้ที่วงหรือที่คำอธิบายก็ได้)
+  const [activeFacility,setActiveFacility]=useState<string|null>(null);
 
   return (
     <>
@@ -90,7 +90,7 @@ export function DashboardPage() {
         <span aria-hidden="true" className="absolute -left-10 -bottom-16 size-40 rounded-full bg-sky-300/15" />
         <div className="relative flex flex-wrap items-end justify-between gap-5">
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold sm:text-3xl">{`สวัสดี ${user.displayName}`}</h1>
+            <h1 className="text-xl font-semibold sm:text-3xl">ระบบจองห้องประชุมออนไลน์</h1>
             <p className="mt-1 text-sm text-white/85 sm:mt-1.5 sm:text-[15px]">{formatFullDate(today)}</p>
             <p className="text-sm text-white/85 sm:text-[15px]">วันนี้มีการใช้ห้อง {todayCount} รายการ</p>
           </div>
@@ -137,8 +137,8 @@ export function DashboardPage() {
       </section>
 
       <section className="enter-stagger mb-5 grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2">
-        <Card><CardHeader title="สถิติการใช้ห้องประชุมแต่ละห้อง" description="จำนวนรายการที่ยืนยันแล้ว"/><CardBody><div className="flex h-40 items-end gap-3 overflow-x-auto border-b border-line px-2 pt-4 sm:h-52">{roomStats.map(({room,count},index)=><RoomBar key={room.roomId} name={room.name} count={count} percent={Math.max(5,count/(roomStats[0]?.count||1)*65)} color={donutColors[index%donutColors.length]!} index={index}/>)}{!roomStats.length&&<p className="m-auto text-sm text-ink-muted">ยังไม่มีข้อมูลห้องประชุม</p>}</div></CardBody></Card>
-        <Card><CardHeader title="สถิติการขอใช้อุปกรณ์/สิ่งอำนวยความสะดวก" description="จากคำขอจองทั้งหมด"/><CardBody><div className="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-4 sm:grid-cols-[190px_minmax(0,1fr)] sm:gap-5"><div className="mx-auto grid size-32 place-items-center rounded-full sm:size-44" style={{background:facilityTotal?`conic-gradient(${donutStops}, var(--color-neutral-soft) ${sweep*100}% 100%)`:'var(--color-neutral-soft)'}}><div className="grid size-20 place-items-center rounded-full bg-surface text-center sm:size-28"><div><strong data-numeric className="block text-xl text-ink sm:text-2xl"><CountUp value={facilityTotal} duration={1100}/></strong><span className="block text-[11px] leading-tight text-ink-muted sm:text-xs">รายการ<br className="sm:hidden"/>อุปกรณ์</span></div></div></div><ul className="space-y-2">{facilityStats.map((item,index)=><li key={item.key} className={`${item.count===0?'hidden sm:flex':'flex'} items-center justify-between gap-3 text-sm`}><span className="flex min-w-0 items-center gap-2"><i className="size-3 shrink-0 rounded-sm" style={{backgroundColor:donutColors[index%donutColors.length]}}/><span className="truncate">{item.label}</span></span><strong data-numeric><CountUp value={item.count} duration={1100}/></strong></li>)}</ul></div></CardBody></Card>
+        <Card><CardHeader title="สถิติการใช้ห้องประชุมแต่ละห้อง" description="จำนวนรายการที่ยืนยันแล้ว"/><CardBody><div className="group/bars flex h-40 items-end gap-3 overflow-x-auto border-b border-line px-2 pt-6 sm:h-52">{roomStats.map(({room,count},index)=><RoomBar key={room.roomId} name={room.name} count={count} percent={Math.max(5,count/(roomStats[0]?.count||1)*65)} color={donutColors[index%donutColors.length]!} index={index}/>)}{!roomStats.length&&<p className="m-auto text-sm text-ink-muted">ยังไม่มีข้อมูลห้องประชุม</p>}</div></CardBody></Card>
+        <Card><CardHeader title="สถิติการขอใช้อุปกรณ์/สิ่งอำนวยความสะดวก" description="จากคำขอจองทั้งหมด"/><CardBody><div className="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-4 sm:grid-cols-[190px_minmax(0,1fr)] sm:gap-5"><div className="relative mx-auto grid size-32 place-items-center sm:size-44"><FacilityDonut items={facilityStats} colors={donutColors} total={facilityTotal} sweep={sweep} active={activeFacility} onActive={setActiveFacility}/><div className="relative grid size-20 place-items-center rounded-full bg-surface text-center sm:size-28"><div><strong data-numeric className="block text-xl text-ink sm:text-2xl"><CountUp value={facilityTotal} duration={1100}/></strong><span className="block text-[11px] leading-tight text-ink-muted sm:text-xs">รายการ<br className="sm:hidden"/>อุปกรณ์</span></div></div></div><ul className="space-y-2">{facilityStats.map((item,index)=><li key={item.key} onMouseEnter={()=>setActiveFacility(item.key)} onMouseLeave={()=>setActiveFacility(null)} className={`${item.count===0?'hidden sm:flex':'flex'} -mx-2 items-center justify-between gap-3 rounded-lg px-2 py-0.5 text-sm transition-colors duration-150 ${activeFacility===item.key?'bg-neutral-soft font-semibold':''}`}><span className="flex min-w-0 items-center gap-2"><i className={`size-3 shrink-0 rounded-sm transition-transform duration-150 ${activeFacility===item.key?'scale-125':''}`} style={{backgroundColor:donutColors[index%donutColors.length]}}/><span className="truncate">{item.label}</span></span><strong data-numeric><CountUp value={item.count} duration={1100}/></strong></li>)}</ul></div></CardBody></Card>
       </section>
 
       <Card className="mb-5"><CardHeader title="รายการจองล่าสุด" description="รายการใหม่และรายการที่กำลังจะมาถึง" action={<Link className="inline-flex min-h-11 items-center text-sm font-medium text-brand hover:underline" to="/my-bookings">ดูทั้งหมด</Link>}/>
@@ -241,15 +241,41 @@ export function DashboardPage() {
 }
 
 /** แท่งกราฟที่โตขึ้นจาก 0 เหลื่อมเวลากันทีละแท่งให้ดูเป็นลำดับ */
+/**
+ * แท่งกราฟ: โตขึ้นจาก 0 ด้วย scaleY (transform ล้วน ไม่คำนวณหน้าใหม่ทุกเฟรม)
+ * ชี้แล้วแท่งนั้นยกขึ้น ตัวเลขขยาย แท่งอื่นจางลง (ดู group/bars ที่กล่องแม่)
+ */
 function RoomBar({name,count,percent,color,index}:{name:string;count:number;percent:number;color:string;index:number}) {
   const delay=index*80;
-  const height=useAnimatedNumber(percent,{duration:900,delay});
-  return <div className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
-    <span data-numeric className="text-sm font-semibold text-ink"><CountUp value={count} delay={delay}/></span>
-    <div className="w-full max-w-14 rounded-t-md" style={{height:`${height}%`,backgroundColor:color}} title={`${name}: ${count} รายการ`}/>
-    <span className="line-clamp-2 min-h-9 w-full text-center text-[11px] leading-4 text-ink-muted">{name}</span>
+  const grow=useAnimatedNumber(1,{duration:900,delay});
+  return <div className="group/bar flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2 transition-opacity duration-200 group-hover/bars:opacity-50 hover:opacity-100!" title={`${name}: ${count} รายการ`}>
+    <span data-numeric className="text-sm font-semibold text-ink transition-transform duration-200 ease-out group-hover/bar:-translate-y-1.5 group-hover/bar:scale-125"><CountUp value={count} delay={delay}/></span>
+    <div className="w-full max-w-14 transition-transform duration-200 ease-out group-hover/bar:-translate-y-1.5" style={{height:`${percent}%`}}>
+      <div className="h-full w-full origin-bottom rounded-t-md shadow-sm transition-shadow duration-200 group-hover/bar:shadow-raised" style={{transform:`scaleY(${grow})`,backgroundColor:color}}/>
+    </div>
+    <span className="line-clamp-2 min-h-9 w-full text-center text-[11px] leading-4 text-ink-muted transition-colors duration-200 group-hover/bar:font-semibold group-hover/bar:text-ink">{name}</span>
   </div>;
 }
+
+/** กราฟวงกลมแบบ SVG: แต่ละสีเป็นชิ้นของตัวเอง จึงชี้ทีละชิ้นได้ (conic-gradient ทำไม่ได้) */
+function FacilityDonut({items,colors,total,sweep,active,onActive}:{items:{key:string;count:number}[];colors:string[];total:number;sweep:number;active:string|null;onActive:(key:string|null)=>void}) {
+  const radius=38; const circumference=2*Math.PI*radius;
+  let cursor=0;
+  return <svg viewBox="0 0 100 100" className="absolute inset-0 size-full -rotate-90" aria-hidden="true">
+    <circle cx="50" cy="50" r={radius} fill="none" stroke="var(--color-neutral-soft)" strokeWidth="14"/>
+    {total>0&&items.map((item,index)=>{
+      if(item.count===0) return null;
+      const length=item.count/total*circumference*sweep; const offset=cursor*sweep; cursor+=item.count/total*circumference;
+      const isActive=active===item.key;
+      return <circle key={item.key} cx="50" cy="50" r={radius} fill="none" stroke={colors[index%colors.length]} strokeWidth="14"
+        strokeDasharray={`${length} ${circumference}`} strokeDashoffset={-offset}
+        onMouseEnter={()=>onActive(item.key)} onMouseLeave={()=>onActive(null)}
+        className="cursor-pointer transition-[transform,opacity] duration-200 ease-out"
+        style={{transformOrigin:'50px 50px',transform:isActive?'scale(1.08)':'scale(1)',opacity:active!==null&&!isActive?0.4:1}}/>;
+    })}
+  </svg>;
+}
+
 
 function SummaryCard({icon,label,value,caption,tone,link}:{icon:React.ReactNode;label:string;value:number;caption:string;tone:'blue'|'orange'|'green'|'purple';link?:string}) {
   // สีของการ์ดตรงกับความหมาย: รออนุมัติ=เหลือง อนุมัติแล้ว=เขียว ส่วนฟ้า/น้ำเงินเข้มเป็นสีตกแต่ง
@@ -260,11 +286,11 @@ function SummaryCard({icon,label,value,caption,tone,link}:{icon:React.ReactNode;
     purple:{card:'from-slate-50 ring-slate-200',tile:'from-blue-800 to-slate-900 shadow-slate-700/30'},
   }[tone];
   const content=<div className="flex items-center gap-3 p-3 sm:gap-3.5 sm:px-4 sm:py-4">
-    <span aria-hidden="true" className={`grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white shadow-lg sm:size-12 ${styles.tile}`}>{icon}</span>
+    <span aria-hidden="true" className={`grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white shadow-lg transition-transform duration-200 ease-out group-hover:-rotate-6 group-hover:scale-110 sm:size-12 ${styles.tile}`}>{icon}</span>
     <span className="min-w-0"><span className="block truncate text-xs font-medium text-ink-muted sm:text-sm">{label}</span><strong data-numeric className="block text-2xl font-semibold leading-tight text-ink sm:text-[1.75rem]"><CountUp value={value}/></strong><span className="hidden text-xs text-ink-subtle sm:inline">{caption}</span></span>
   </div>;
-  const shell=`block rounded-2xl bg-gradient-to-br to-white shadow-card ring-1 sm:rounded-[18px] ${styles.card}`;
-  return link?<Link to={link} className={`lift ${shell}`}>{content}</Link>:<div className={shell}>{content}</div>;
+  const shell=`group lift block rounded-2xl bg-gradient-to-br to-white shadow-card ring-1 sm:rounded-[18px] ${styles.card}`;
+  return link?<Link to={link} className={shell}>{content}</Link>:<div className={shell}>{content}</div>;
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {

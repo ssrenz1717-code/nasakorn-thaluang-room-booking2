@@ -87,8 +87,11 @@ const TEXT_GUARD = "'";
 export function sanitizeForSheet(value: CellValue): CellValue {
   if (typeof value !== 'string' || value === '') return value;
   const first = value.charAt(0);
-  if (FORMULA_TRIGGERS.indexOf(first) === -1) return value;
-  return `${TEXT_GUARD}${value}`;
+  if (FORMULA_TRIGGERS.indexOf(first) !== -1) return `${TEXT_GUARD}${value}`;
+  // Sheets แปลงข้อความที่หน้าตาเหมือนวันที่ ("2026-10-28", เวลา ISO) เป็นค่าวันที่ให้เอง
+  // และตัดเลข 0 หน้าข้อความตัวเลข ("0812345678") ทิ้ง -> บังคับเป็นข้อความล้วนให้อ่านกลับได้ค่าเดิม
+  if (/^\d{4}-\d{2}-\d{2}/.test(value) || /^0\d+$/.test(value)) return `${TEXT_GUARD}${value}`;
+  return value;
 }
 
 /**

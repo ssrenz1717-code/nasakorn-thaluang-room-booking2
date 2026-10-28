@@ -54,7 +54,7 @@ describe('เปิดเว็บโดยยังไม่ได้ตั้�
     await openApp();
 
     const heading = screen.getByRole('heading', { level: 1 });
-    expect(heading.textContent).toBe('สวัสดี ผู้ดูแลระบบ');
+    expect(heading.textContent).toBe('ระบบจองห้องประชุมออนไลน์');
   });
 
   it('ไม่มีคำว่าโหมดสาธิตหรือแถบเตือนข้อมูลตัวอย่างหลงเหลืออยู่', async () => {
@@ -330,5 +330,28 @@ describe('ช่องเลือกเวลาในฟอร์มจอง'
     // เลือกเวลาเริ่มเลยเวลาสิ้นสุดเดิม (10:00) -> สิ้นสุดต้องเลื่อนเป็นอีกหนึ่งชั่วโมง
     fireEvent.change(start, { target: { value: '15:00' } });
     expect(end.value).toBe('16:00');
+  });
+});
+
+describe('ห้องไม่ว่าง: บอกตั้งแต่ตอนกรอกฟอร์ม', () => {
+  it('เลือกช่วงที่ชน -> เตือนพร้อมเวลาว่าง ปุ่มส่งกดไม่ได้ กดเวลาที่แนะนำแล้วส่งได้', async () => {
+    const { user, nav } = await openApp();
+    await goTo(user, nav, 'จองห้องประชุม');
+
+    // ข้อมูลตั้งต้น: ห้องประชุมใหญ่ วันนี้ 09:00-10:30 มีคนจองแล้ว ฟอร์มเปิดมาที่ 09:00-10:00
+    const warning = await screen.findByRole('alert', {}, { timeout: 3000 });
+    expect(warning.textContent).toContain('ห้องนี้ไม่ว่างเวลา 09:00–10:30 น.');
+    await user.click(screen.getByLabelText(/ข้าพเจ้าจะดูแลรักษาทรัพย์สิน/));
+    expect((screen.getByRole('button', { name: /ส่งคำขอจอง/ }) as HTMLButtonElement).disabled).toBe(true);
+
+    // เวลาที่ชนเลือกไม่ได้ในรายการ
+    const start = screen.getByLabelText('เริ่ม') as HTMLSelectElement;
+    expect([...start.options].find((option) => option.value === '09:00')?.disabled).toBe(true);
+
+    // กดเวลาว่างที่ระบบเสนอ
+    const suggestion = within(warning).getAllByRole('button')[0]!;
+    await user.click(suggestion);
+    await waitFor(() => expect(screen.queryByText(/ห้องนี้ไม่ว่างเวลา/)).toBeNull());
+    expect((screen.getByRole('button', { name: /ส่งคำขอจอง/ }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

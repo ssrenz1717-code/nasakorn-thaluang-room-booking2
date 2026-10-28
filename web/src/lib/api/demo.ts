@@ -12,10 +12,11 @@ import { DEFAULT_SYSTEM_SETTINGS, type SystemSettings } from '@shared/schemas/se
 import type { RoomEquipment, RoomStatus } from '@shared/schemas/room';
 import type { BookingStatus } from '@shared/domain/status';
 import { addDaysToDateKey, toDateKey } from '@shared/time/bangkok';
-import { validateBookingRequest } from '@shared/schemas/booking';
+import { validateBookingRequest, validateAvailabilityInput } from '@shared/schemas/booking';
 import { validateBookingRules } from '@shared/domain/booking-rules';
 import { findConflicts } from '@shared/domain/overlap';
 import { readLocal, writeLocal } from '../storage';
+import { busySlotsFor } from '@shared/domain/availability';
 import { ApiError, type SessionUser, type Transport, type VersionResult } from './types';
 
 export interface DemoRoom {
@@ -326,6 +327,12 @@ export function createDemoTransport(): Transport {
         (user.role === 'admin' || booking.userEmail === user.email) &&
         (!payload.from || booking.dateKey >= payload.from) && (!payload.to || booking.dateKey <= payload.to),
       ) };
+    },
+    availability: (payload: unknown, token) => {
+      userFromToken(token);
+      const parsed = validateAvailabilityInput(payload);
+      if (!parsed.ok) throw new ApiError('VALIDATION', parsed.issues.map((issue) => issue.message).join(' '), parsed.issues);
+      return { busy: busySlotsFor(state.bookings, parsed.value.roomId, parsed.value.dateKey) };
     },
     createBooking: (payload: unknown, token) => {
       const user = userFromToken(token);

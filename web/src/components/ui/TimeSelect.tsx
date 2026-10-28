@@ -13,6 +13,7 @@ export function TimeSelect({
   value,
   options,
   onChange,
+  isDisabled,
   className,
 }: {
   id: string;
@@ -21,15 +22,18 @@ export function TimeSelect({
   /** นาทีนับจากเที่ยงคืน */
   options: number[];
   onChange: (value: string) => void;
+  /** เวลาที่เลือกไม่ได้เพราะห้องไม่ว่าง — ยังแสดงให้เห็น แต่กดไม่ได้ */
+  isDisabled?: (minutes: number) => boolean;
   className?: string;
 }) {
   return (
     <select id={id} required value={value} onChange={(event) => onChange(event.target.value)} className={className}>
       {options.map((minutes) => {
         const time = formatTimeOfDay(minutes);
+        const disabled = isDisabled?.(minutes) ?? false;
         return (
-          <option key={minutes} value={time}>
-            {time} น.
+          <option key={minutes} value={time} disabled={disabled}>
+            {disabled ? `${time} น. (ไม่ว่าง)` : `${time} น.`}
           </option>
         );
       })}
