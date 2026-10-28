@@ -128,7 +128,7 @@ export function DashboardPage() {
         </Alert>
       )}
 
-      <section aria-label="สรุปการจอง" className="enter-stagger mb-5 grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+      <section aria-label="สรุปการจอง" className="enter-stagger mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard icon={<CalendarClock className="size-5"/>} label="ใช้ห้องวันนี้" value={todayCount} caption="รายการ" tone="blue"/>
         <SummaryCard icon={<Clock className="size-5"/>} label="รออนุมัติ" value={pendingCount} caption="รายการ" tone="orange" link="/approvals"/>
         <SummaryCard icon={<CheckCircle2 className="size-5"/>} label="อนุมัติแล้ว" value={approvedCount} caption="รายการ" tone="green"/>
@@ -247,9 +247,9 @@ function SummaryCard({icon,label,value,caption,tone,link}:{icon:React.ReactNode;
     green:{card:'from-emerald-50 ring-emerald-100',tile:'from-emerald-500 to-teal-600 shadow-emerald-500/30'},
     purple:{card:'from-violet-50 ring-violet-100',tile:'from-violet-500 to-indigo-600 shadow-violet-500/30'},
   }[tone];
-  const content=<div className="flex items-center gap-4 p-5">
-    <span aria-hidden="true" className={`grid size-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-lg ${styles.tile}`}>{icon}</span>
-    <span className="min-w-0"><span className="block text-sm font-medium text-ink-muted">{label}</span><strong data-numeric className="block text-3xl font-semibold leading-tight text-ink"><CountUp value={value}/></strong><span className="text-xs text-ink-subtle">{caption}</span></span>
+  const content=<div className="flex items-center gap-3.5 px-4 py-4">
+    <span aria-hidden="true" className={`grid size-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white shadow-lg ${styles.tile}`}>{icon}</span>
+    <span className="min-w-0"><span className="block text-sm font-medium text-ink-muted">{label}</span><strong data-numeric className="block text-[1.75rem] font-semibold leading-tight text-ink"><CountUp value={value}/></strong><span className="text-xs text-ink-subtle">{caption}</span></span>
   </div>;
   const shell=`block rounded-[18px] bg-gradient-to-br to-white shadow-card ring-1 ${styles.card}`;
   return link?<Link to={link} className={`lift ${shell}`}>{content}</Link>:<div className={shell}>{content}</div>;
