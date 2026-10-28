@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { CalendarCheck2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { CalendarCheck2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { visibleNavItems } from '../../app/navigation';
 import type { UserRole } from '@shared/schemas/user';
@@ -8,15 +8,18 @@ export function SidebarContent({
   role,
   onNavigate,
   collapsed = false,
-  onToggleCollapsed,
+  pinned = false,
+  onTogglePinned,
   badges = {},
 }: {
   role: UserRole;
   onNavigate?: () => void;
   /** ย่อเหลือแต่ไอคอน (ใช้บนจอใหญ่เท่านั้น ลิ้นชักบนมือถือแสดงเต็มเสมอ) */
   collapsed?: boolean;
-  /** ไม่ส่งมา = ไม่มีปุ่มย่อ/ขยาย */
-  onToggleCollapsed?: () => void;
+  /** เมนูถูกปักให้ขยายค้างไว้หรือไม่ — ใช้ตั้งชื่อปุ่มโลโก้ */
+  pinned?: boolean;
+  /** กดโลโก้ปฏิทินเพื่อปัก/เลิกปักเมนู — ไม่ส่งมา = โลโก้เป็นแค่รูป */
+  onTogglePinned?: () => void;
   /** ตัวเลขป้ายแดงต่อเมนู เช่น { '/approvals': 3 } */
   badges?: Record<string, number>;
 }) {
@@ -24,34 +27,31 @@ export function SidebarContent({
 
   return (
     <div className="bg-brand-gradient flex h-full flex-col text-ink-inverse">
-      <div className={cn('flex items-center gap-2.5 py-4', collapsed ? 'flex-col px-2' : 'px-5')}>
-        <span
-          aria-hidden="true"
-          className="grid size-9 shrink-0 place-items-center rounded-inner bg-white/15 text-ink-inverse ring-1 ring-white/25"
-        >
-          <CalendarCheck2 className="size-5" />
-        </span>
+      <div className={cn('flex items-center gap-2.5 py-4', collapsed ? 'justify-center px-2' : 'px-5')}>
+        {onTogglePinned !== undefined ? (
+          <button
+            type="button"
+            onClick={onTogglePinned}
+            aria-label={pinned ? 'ย่อเมนู' : 'ขยายเมนูค้างไว้'}
+            aria-pressed={pinned}
+            title={pinned ? 'ย่อเมนู' : 'ขยายเมนูค้างไว้'}
+            className="grid size-9 shrink-0 place-items-center rounded-inner bg-white/15 text-ink-inverse ring-1 ring-white/25 transition-colors duration-150 hover:bg-white/25 focus-visible:outline-white"
+          >
+            <CalendarCheck2 className="size-5" aria-hidden="true" />
+          </button>
+        ) : (
+          <span
+            aria-hidden="true"
+            className="grid size-9 shrink-0 place-items-center rounded-inner bg-white/15 text-ink-inverse ring-1 ring-white/25"
+          >
+            <CalendarCheck2 className="size-5" />
+          </span>
+        )}
         {!collapsed && (
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">ระบบจองห้องประชุม</p>
             <p className="truncate text-xs text-white/80">วิทยาลัยเทคนิคท่าหลวงฯ</p>
           </div>
-        )}
-        {onToggleCollapsed !== undefined && (
-          <button
-            type="button"
-            onClick={onToggleCollapsed}
-            aria-label={collapsed ? 'ขยายเมนู' : 'ย่อเมนู'}
-            aria-expanded={!collapsed}
-            title={collapsed ? 'ขยายเมนู' : 'ย่อเมนู'}
-            className="grid size-9 shrink-0 place-items-center rounded-control text-white/85 transition-colors duration-150 hover:bg-white/15 hover:text-white focus-visible:outline-white"
-          >
-            {collapsed ? (
-              <PanelLeftOpen className="size-5" aria-hidden="true" />
-            ) : (
-              <PanelLeftClose className="size-5" aria-hidden="true" />
-            )}
-          </button>
         )}
       </div>
 

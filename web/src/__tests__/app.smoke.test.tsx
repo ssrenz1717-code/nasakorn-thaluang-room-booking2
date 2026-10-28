@@ -214,18 +214,41 @@ describe('จองห้องจริงตั้งแต่ต้นจน�
 });
 
 describe('เมนูซ้าย: ย่อได้ และมีป้ายแจ้งรายการรออนุมัติ', () => {
-  it('ย่อเมนูแล้วยังกดเมนูได้ และจำไว้หลังรีเฟรชหน้า', async () => {
-    const { user } = await openApp();
+  const sidebarPanel = () => document.querySelector('aside [data-expanded]') as HTMLElement;
 
-    await user.click(screen.getByRole('button', { name: 'ย่อเมนู' }));
-    expect(screen.getByRole('button', { name: 'ขยายเมนู' })).toBeDefined();
+  it('เปิดเว็บมาเมนูหุบไว้ก่อน แต่ยังกดเมนูได้', async () => {
+    await openApp();
+
+    expect(sidebarPanel().dataset.expanded).toBe('false');
     // ชื่อเมนูซ่อนจากสายตา แต่ลิงก์ยังมีชื่อให้โปรแกรมอ่านหน้าจอและกดได้
     const nav = screen.getByRole('navigation', { name: 'เมนูหลัก' });
     expect(within(nav).getByRole('link', { name: 'ห้องประชุม' })).toBeDefined();
+  });
+
+  it('เอาเมาส์วางแล้วเมนูเด้งออก เอาออกแล้วหุบเอง', async () => {
+    await openApp();
+
+    fireEvent.mouseEnter(sidebarPanel());
+    await waitFor(() => expect(sidebarPanel().dataset.expanded).toBe('true'));
+    fireEvent.mouseLeave(sidebarPanel());
+    await waitFor(() => expect(sidebarPanel().dataset.expanded).toBe('false'));
+  });
+
+  it('กดโลโก้ปฏิทินแล้วขยายค้าง และจำไว้หลังรีเฟรชหน้า', async () => {
+    const { user } = await openApp();
+
+    await user.click(screen.getByRole('button', { name: 'ขยายเมนูค้างไว้' }));
+    expect(sidebarPanel().dataset.expanded).toBe('true');
+
+    // เอาเมาส์ออกแล้วต้องไม่หุบ เพราะปักไว้แล้ว
+    fireEvent.mouseLeave(sidebarPanel());
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(sidebarPanel().dataset.expanded).toBe('true');
 
     cleanup();
     await openApp();
-    expect(screen.getByRole('button', { name: 'ขยายเมนู' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'ย่อเมนู' })).toBeDefined();
+    expect(sidebarPanel().dataset.expanded).toBe('true');
   });
 
   it('ผู้ดูแลเห็นจำนวนรออนุมัติบนเมนู และหายเมื่ออนุมัติครบ', async () => {
