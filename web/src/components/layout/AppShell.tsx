@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Outlet } from 'react-router-dom';
-import { X } from 'lucide-react';
 import { useApp } from '../../app/providers/AppProvider';
 import { cn } from '../../lib/cn';
 import { usePendingApprovals } from '../../lib/hooks/usePendingApprovals';
 import { readLocal, writeLocal } from '../../lib/storage';
+import { BottomNav } from './BottomNav';
 import { SidebarContent } from './Sidebar';
 import { Topbar } from './Topbar';
 
@@ -40,9 +40,6 @@ export function AppShell() {
   const expanded = pinned || peek;
   const pendingApprovals = usePendingApprovals();
   const badges = { '/approvals': pendingApprovals };
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const drawerRef = useRef<HTMLDivElement>(null);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   // กด Esc ตอนเมนูเด้งออกมา -> หุบกลับ
   useEffect(() => {
@@ -53,25 +50,6 @@ export function AppShell() {
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [peek]);
-
-  // ลิ้นชักเมนูบนมือถือ: Escape ปิด, ล็อกการเลื่อนพื้นหลัง, ย้ายโฟกัสเข้าไปในลิ้นชัก
-  useEffect(() => {
-    if (!drawerOpen) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setDrawerOpen(false);
-    };
-    document.addEventListener('keydown', onKeyDown);
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    closeButtonRef.current?.focus();
-
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [drawerOpen]);
 
   if (user === null) return null;
 
@@ -111,44 +89,18 @@ export function AppShell() {
         </div>
       </aside>
 
-      {drawerOpen && (
-        <div className="fixed inset-0 z-[40] lg:hidden">
-          <button
-            type="button"
-            aria-label="ปิดเมนู"
-            onClick={() => setDrawerOpen(false)}
-            className="absolute inset-0 bg-ink/40 motion-safe:animate-[pop_150ms_var(--ease-out)_both]"
-          />
-          <div
-            ref={drawerRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label="เมนูหลัก"
-            className="absolute inset-y-0 left-0 w-[min(18rem,85vw)] shadow-overlay motion-safe:animate-[rise_200ms_var(--ease-out)_both]"
-          >
-            <button
-              ref={closeButtonRef}
-              type="button"
-              onClick={() => setDrawerOpen(false)}
-              aria-label="ปิดเมนู"
-              className="absolute right-2 top-3 z-10 grid size-11 place-items-center rounded-control text-white hover:bg-white/15 focus-visible:outline-white"
-            >
-              <X className="size-5" aria-hidden="true" />
-            </button>
-            <SidebarContent role={user.role} onNavigate={() => setDrawerOpen(false)} badges={badges} />
-          </div>
-        </div>
-      )}
-
       <div className="flex min-w-0 flex-col">
-        <Topbar onOpenMenu={() => setDrawerOpen(true)} />
+        <Topbar />
 
-        <main id="main" className="flex-1 px-4 py-6 lg:px-6 lg:py-8">
+        {/* เว้นที่ด้านล่างเท่าเมนูด้านล่าง + ขอบ iPhone เนื้อหาบรรทัดสุดท้ายจะได้ไม่ถูกเมนูบัง */}
+        <main id="main" className="flex-1 px-4 pt-4 pb-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+1.5rem)] lg:px-6 lg:py-8">
           <div className="mx-auto max-w-7xl">
             <Outlet />
           </div>
         </main>
       </div>
+
+      <BottomNav role={user.role} badges={badges} />
     </div>
   );
 }

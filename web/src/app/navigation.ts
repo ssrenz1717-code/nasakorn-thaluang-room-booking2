@@ -10,6 +10,8 @@ import type { ComponentType } from 'react';
 import type { UserRole } from '@shared/schemas/user';
 
 export interface NavItem {
+  /** บนมือถือ: 'bar' = ปุ่มบนเมนูด้านล่าง, ไม่ระบุ = อยู่ในแผ่น "เพิ่มเติม" */
+  mobile?: 'bar';
   path: string;
   label: string;
   icon: ComponentType<{ className?: string }>;
@@ -18,10 +20,10 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { path: '/', label: 'ภาพรวม', icon: LayoutDashboard },
-  { path: '/book', label: 'จองห้องประชุม', icon: CalendarPlus },
-  { path: '/calendar', label: 'ปฏิทินการจอง', icon: CalendarDays },
-  { path: '/my-bookings', label: 'รายการจองของฉัน', icon: ClipboardList },
+  { path: '/', label: 'ภาพรวม', icon: LayoutDashboard, mobile: 'bar' },
+  { path: '/book', label: 'จองห้องประชุม', icon: CalendarPlus, mobile: 'bar' },
+  { path: '/calendar', label: 'ปฏิทินการจอง', icon: CalendarDays, mobile: 'bar' },
+  { path: '/my-bookings', label: 'รายการจองของฉัน', icon: ClipboardList, mobile: 'bar' },
   { path: '/rooms', label: 'ห้องประชุม', icon: DoorOpen },
   { path: '/approvals', label: 'รออนุมัติ', icon: ClipboardCheck, roles: ['admin'] },
   { path: '/reports', label: 'พิมพ์แบบฟอร์ม A4', icon: ClipboardList },

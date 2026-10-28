@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { App } from '../app/App';
 import { AppProvider } from '../app/providers/AppProvider';
 import { ToastProvider } from '../components/ui/Toast';
+import { dayOfWeekOfDateKey, toDateKey } from '@shared/time/bangkok';
 
 /**
  * เทสว่าหน้าเว็บ "รันได้จริง" ไม่ใช่แค่ build ผ่าน
@@ -263,5 +264,48 @@ describe('เมนูซ้าย: ย่อได้ และมีป้า�
       () => expect(within(nav).getByRole('link', { name: 'รออนุมัติ' })).toBeDefined(),
       { timeout: 3000 },
     );
+  });
+});
+
+describe('มือถือ: เมนูด้านล่าง', () => {
+  it('มี 5 ช่อง และปุ่มจองห้องอยู่ตรงกลาง', async () => {
+    await openApp();
+
+    const bar = screen.getByRole('navigation', { name: 'เมนูด้านล่าง' });
+    const slots = within(bar).getAllByRole('listitem');
+    expect(slots).toHaveLength(5);
+    expect(within(slots[2]!).getByRole('link').textContent).toContain('จองห้อง');
+    expect(within(bar).getByRole('button', { name: /เพิ่มเติม/ })).toBeDefined();
+  });
+
+  it('"เพิ่มเติม" เปิดแผ่นเมนูที่เหลือพร้อมป้ายรออนุมัติ และกด Esc แล้วปิด', async () => {
+    const { user } = await openApp();
+    const bar = screen.getByRole('navigation', { name: 'เมนูด้านล่าง' });
+
+    // ป้ายรออนุมัติต้องโผล่ที่ปุ่มเพิ่มเติมด้วย เพราะเมนูรออนุมัติอยู่ข้างใน
+    const more = await within(bar).findByRole('button', { name: /เพิ่มเติม.*มี 1 รายการรออนุมัติ/ }, { timeout: 3000 });
+    await user.click(more);
+
+    const sheet = screen.getByRole('dialog', { name: 'เมนูเพิ่มเติม' });
+    expect(within(sheet).getByRole('link', { name: 'ห้องประชุม' })).toBeDefined();
+    expect(within(sheet).getByRole('link', { name: /^รออนุมัติ.*มี 1 รายการ/ })).toBeDefined();
+    expect(within(sheet).getByRole('link', { name: 'พิมพ์แบบฟอร์ม A4' })).toBeDefined();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'เมนูเพิ่มเติม' })).toBeNull();
+  });
+});
+
+describe('ปฏิทินมุมมองเดือน', () => {
+  it('วันที่อยู่ใต้คอลัมน์วันในสัปดาห์ที่ถูกต้อง', async () => {
+    const { user, nav } = await openApp();
+    await goTo(user, nav, 'ปฏิทินการจอง');
+    await user.click(screen.getByRole('button', { name: 'เดือน' }));
+
+    const cells = screen.getAllByRole('gridcell');
+    expect(cells).toHaveLength(42);
+    // วันที่เลือกตอนเปิดหน้าคือวันนี้ ต้องอยู่คอลัมน์เดียวกับวันในสัปดาห์ของวันนี้ (อา.=0)
+    const todayIndex = cells.findIndex((cell) => cell.getAttribute('aria-selected') === 'true');
+    expect(todayIndex % 7).toBe(dayOfWeekOfDateKey(toDateKey(new Date())));
   });
 });

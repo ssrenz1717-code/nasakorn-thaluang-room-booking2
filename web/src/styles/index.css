@@ -2,7 +2,7 @@
 
 @page { size: A4 portrait; margin: 12mm; }
 
-.print-value { display: inline-block; min-width: 3rem; border-bottom: 1px dotted #555; padding: 0 0.25rem; line-height: 1.5; }
+.print-value { display: inline-block; min-width: 3rem; border-bottom: 1px dotted var(--color-print-rule); padding: 0 0.25rem; line-height: 1.5; }
 
 @media print {
   html, body { background: white !important; }
@@ -69,9 +69,15 @@
   --shadow-raised: 0 1px 2px hsl(220 30% 20% / 0.05), 0 4px 12px hsl(220 30% 20% / 0.07);
   --shadow-overlay: 0 8px 32px hsl(220 30% 20% / 0.16);
 
-  /* สีตกแต่ง (ไม่ใช้สื่อสถานะ) — เหลือง/เขียว/แดงสงวนไว้ให้สถานะการจองเท่านั้น */
+  /* สีตกแต่ง (ไม่ใช้สื่อสถานะ) — เหลือง/เขียว/แดงสงวนไว้ให้สถานะการจองเท่านั้น ไม่ใช้ม่วง */
   --color-brand-deep: #1e3a8a;
-  --color-indigo: #4338ca;
+  --color-brand-bright: #1d4ed8;
+  --color-brand-mid: #1e40af;
+  /* แสงสีจาง ๆ บนพื้นหลัง */
+  --color-glow-sky: hsl(219 95% 90% / 0.55);
+  --color-glow-cyan: hsl(190 80% 92% / 0.5);
+  /* เส้นจุดใต้ช่องกรอกในแบบฟอร์ม A4 ที่พิมพ์ออกกระดาษ */
+  --color-print-rule: #555;
   --color-cyan: #0891b2;
 
   --shadow-brand: 0 6px 18px -6px hsl(225 80% 40% / 0.55);
@@ -80,6 +86,8 @@
 
   /* ลำดับชั้นการซ้อน — ห้ามใส่เลข z-index ตามใจในคอมโพเนนต์ */
   --z-sticky: 20;
+  /* ความสูงเมนูด้านล่างบนมือถือ (ไม่รวมขอบล่างของ iPhone) */
+  --bottom-nav-height: 4rem;
   --z-overlay: 40;
   --z-modal: 100;
   --z-toast: 1000;
@@ -87,16 +95,21 @@
 
 @layer base {
   html {
+    /* clip ไม่ใช่ hidden: กันหน้าเลื่อนซ้ายขวาบนมือถือ โดยไม่ทำให้ position: sticky พัง */
+    overflow-x: clip;
     -webkit-font-smoothing: antialiased;
+    /* แตะบนมือถือแล้วไม่มีกล่องสีเทาแวบ — ปุ่มทุกตัวมีสถานะตอนกดของตัวเองอยู่แล้ว */
+    -webkit-tap-highlight-color: transparent;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
 
   body {
+    overflow-x: clip;
     /* แสงสีจาง ๆ มุมบนขวาและล่างซ้าย ให้พื้นไม่แบนเกินไป โดยไม่รบกวนการอ่าน */
     background:
-      radial-gradient(1100px 520px at 100% -8%, hsl(219 95% 90% / 0.55), transparent 62%),
-      radial-gradient(900px 460px at -8% 108%, hsl(248 85% 93% / 0.55), transparent 60%),
+      radial-gradient(1100px 520px at 100% -8%, var(--color-glow-sky), transparent 62%),
+      radial-gradient(900px 460px at -8% 108%, var(--color-glow-cyan), transparent 60%),
       var(--color-canvas);
     background-attachment: fixed;
     color: var(--color-ink);
@@ -147,9 +160,9 @@
 }
 
 @layer utilities {
-  /* น้ำเงินเข้ม -> คราม ข้อความขาวบนพื้นนี้ผ่าน contrast ทุกจุดของการไล่สี (ต่ำสุด ~6.7:1) */
+  /* น้ำเงินเข้ม -> น้ำเงินสด (โทนเดียว ไม่ไล่ไปทางม่วง) ข้อความขาวผ่าน contrast ทุกจุด ต่ำสุด ~6.6:1 */
   .bg-brand-gradient {
-    background-image: linear-gradient(135deg, var(--color-brand-deep) 0%, #1e40af 45%, var(--color-indigo) 100%);
+    background-image: linear-gradient(135deg, var(--color-brand-deep) 0%, var(--color-brand-mid) 50%, var(--color-brand-bright) 100%);
   }
 
   /* เนื้อหาโผล่ขึ้นทีละชิ้นตอนเปิดหน้า (ปิดเองเมื่อผู้ใช้ตั้งเครื่องให้ลดการเคลื่อนไหว) */

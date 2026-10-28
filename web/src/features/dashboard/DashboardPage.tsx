@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  ChevronDown,
   CalendarPlus,
   CalendarClock,
   CheckCircle2,
@@ -22,6 +23,7 @@ import { Button } from '../../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../../components/ui/Card';
 import { CountUp } from '../../components/ui/CountUp';
 import { useAnimatedNumber } from '../../lib/hooks/useAnimatedNumber';
+import { DESKTOP_QUERY, useMediaQuery } from '../../lib/hooks/useMediaQuery';
 import { formatClockWithSeconds, formatDuration, formatFullDate, formatShortDate } from '../../lib/format/thai';
 import type { DemoBooking, DemoRoom } from '../../lib/api/demo';
 
@@ -31,6 +33,7 @@ export function DashboardPage() {
   const { api, isDemo, serverTime, dataVersion, token } = useApp();
   const user = useCurrentUser();
   const settings = useSettings();
+  const isDesktop = useMediaQuery(DESKTOP_QUERY, true);
 
   const [pingState, setPingState] = useState<
     { status: 'idle' } | { status: 'busy' } | { status: 'done'; at: Date } | { status: 'failed'; message: string }
@@ -80,18 +83,16 @@ export function DashboardPage() {
 
   return (
     <>
-      <section className="enter relative mb-6 overflow-hidden rounded-[20px] bg-brand-gradient px-6 py-7 text-ink-inverse shadow-raised sm:px-8">
+      <section className="enter relative mb-4 overflow-hidden rounded-[20px] bg-brand-gradient px-5 py-5 text-ink-inverse shadow-raised sm:mb-6 sm:px-8 sm:py-7">
         {/* วงกลมตกแต่งด้านหลัง — ไม่มีความหมาย ซ่อนจากโปรแกรมอ่านหน้าจอ */}
         <span aria-hidden="true" className="absolute -right-12 -top-20 size-64 rounded-full bg-white/10" />
         <span aria-hidden="true" className="absolute -bottom-24 right-28 size-48 rounded-full bg-cyan-300/20" />
-        <span aria-hidden="true" className="absolute -left-10 -bottom-16 size-40 rounded-full bg-indigo-300/15" />
+        <span aria-hidden="true" className="absolute -left-10 -bottom-16 size-40 rounded-full bg-sky-300/15" />
         <div className="relative flex flex-wrap items-end justify-between gap-5">
           <div className="min-w-0">
-            <p className="text-sm font-medium text-white/80">วิทยาลัยเทคนิคท่าหลวงซิเมนต์ไทยอนุสรณ์</p>
-            <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">{`สวัสดี ${user.displayName}`}</h1>
-            <p className="mt-1.5 text-[15px] text-white/85">
-              {formatFullDate(today)} · วันนี้มีการใช้ห้อง {todayCount} รายการ
-            </p>
+            <h1 className="text-xl font-semibold sm:text-3xl">{`สวัสดี ${user.displayName}`}</h1>
+            <p className="mt-1 text-sm text-white/85 sm:mt-1.5 sm:text-[15px]">{formatFullDate(today)}</p>
+            <p className="text-sm text-white/85 sm:text-[15px]">วันนี้มีการใช้ห้อง {todayCount} รายการ</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {!isDemo && (
@@ -107,7 +108,7 @@ export function DashboardPage() {
             )}
             <Link
               to="/book"
-              className="inline-flex min-h-11 items-center gap-2 rounded-control bg-white px-4 text-[15px] font-semibold text-brand shadow-card transition-transform duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-white"
+              className="hidden min-h-11 items-center gap-2 rounded-control bg-white px-4 text-[15px] font-semibold text-brand lg:inline-flex shadow-card transition-transform duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-white"
             >
               <CalendarPlus className="size-4" aria-hidden="true" />
               จองห้องประชุม
@@ -128,7 +129,7 @@ export function DashboardPage() {
         </Alert>
       )}
 
-      <section aria-label="สรุปการจอง" className="enter-stagger mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="สรุปการจอง" className="enter-stagger mb-4 grid grid-cols-2 gap-3 sm:mb-5 sm:gap-4 xl:grid-cols-4">
         <SummaryCard icon={<CalendarClock className="size-5"/>} label="ใช้ห้องวันนี้" value={todayCount} caption="รายการ" tone="blue"/>
         <SummaryCard icon={<Clock className="size-5"/>} label="รออนุมัติ" value={pendingCount} caption="รายการ" tone="orange" link="/approvals"/>
         <SummaryCard icon={<CheckCircle2 className="size-5"/>} label="อนุมัติแล้ว" value={approvedCount} caption="รายการ" tone="green"/>
@@ -136,11 +137,16 @@ export function DashboardPage() {
       </section>
 
       <section className="enter-stagger mb-5 grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2">
-        <Card><CardHeader title="สถิติการใช้ห้องประชุมแต่ละห้อง" description="จำนวนรายการที่ยืนยันแล้ว"/><CardBody><div className="flex h-52 items-end gap-3 overflow-x-auto border-b border-line px-2 pt-4">{roomStats.map(({room,count},index)=><RoomBar key={room.roomId} name={room.name} count={count} percent={Math.max(5,count/(roomStats[0]?.count||1)*65)} color={donutColors[index%donutColors.length]!} index={index}/>)}{!roomStats.length&&<p className="m-auto text-sm text-ink-muted">ยังไม่มีข้อมูลห้องประชุม</p>}</div></CardBody></Card>
-        <Card><CardHeader title="สถิติการขอใช้อุปกรณ์/สิ่งอำนวยความสะดวก" description="จากคำขอจองทั้งหมด"/><CardBody><div className="grid items-center gap-5 sm:grid-cols-[190px_1fr]"><div className="mx-auto grid size-44 place-items-center rounded-full" style={{background:facilityTotal?`conic-gradient(${donutStops}, var(--color-neutral-soft) ${sweep*100}% 100%)`:'var(--color-neutral-soft)'}}><div className="grid size-28 place-items-center rounded-full bg-surface text-center"><div><strong data-numeric className="block text-2xl text-ink"><CountUp value={facilityTotal} duration={1100}/></strong><span className="text-xs text-ink-muted">รายการอุปกรณ์</span></div></div></div><ul className="space-y-2">{facilityStats.map((item,index)=><li key={item.key} className="flex items-center justify-between gap-3 text-sm"><span className="flex min-w-0 items-center gap-2"><i className="size-3 shrink-0 rounded-sm" style={{backgroundColor:donutColors[index%donutColors.length]}}/><span className="truncate">{item.label}</span></span><strong data-numeric><CountUp value={item.count} duration={1100}/></strong></li>)}</ul></div></CardBody></Card>
+        <Card><CardHeader title="สถิติการใช้ห้องประชุมแต่ละห้อง" description="จำนวนรายการที่ยืนยันแล้ว"/><CardBody><div className="flex h-40 items-end gap-3 overflow-x-auto border-b border-line px-2 pt-4 sm:h-52">{roomStats.map(({room,count},index)=><RoomBar key={room.roomId} name={room.name} count={count} percent={Math.max(5,count/(roomStats[0]?.count||1)*65)} color={donutColors[index%donutColors.length]!} index={index}/>)}{!roomStats.length&&<p className="m-auto text-sm text-ink-muted">ยังไม่มีข้อมูลห้องประชุม</p>}</div></CardBody></Card>
+        <Card><CardHeader title="สถิติการขอใช้อุปกรณ์/สิ่งอำนวยความสะดวก" description="จากคำขอจองทั้งหมด"/><CardBody><div className="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-4 sm:grid-cols-[190px_minmax(0,1fr)] sm:gap-5"><div className="mx-auto grid size-32 place-items-center rounded-full sm:size-44" style={{background:facilityTotal?`conic-gradient(${donutStops}, var(--color-neutral-soft) ${sweep*100}% 100%)`:'var(--color-neutral-soft)'}}><div className="grid size-20 place-items-center rounded-full bg-surface text-center sm:size-28"><div><strong data-numeric className="block text-xl text-ink sm:text-2xl"><CountUp value={facilityTotal} duration={1100}/></strong><span className="block text-[11px] leading-tight text-ink-muted sm:text-xs">รายการ<br className="sm:hidden"/>อุปกรณ์</span></div></div></div><ul className="space-y-2">{facilityStats.map((item,index)=><li key={item.key} className={`${item.count===0?'hidden sm:flex':'flex'} items-center justify-between gap-3 text-sm`}><span className="flex min-w-0 items-center gap-2"><i className="size-3 shrink-0 rounded-sm" style={{backgroundColor:donutColors[index%donutColors.length]}}/><span className="truncate">{item.label}</span></span><strong data-numeric><CountUp value={item.count} duration={1100}/></strong></li>)}</ul></div></CardBody></Card>
       </section>
 
-      <Card className="mb-5"><CardHeader title="รายการจองล่าสุด" description="รายการใหม่และรายการที่กำลังจะมาถึง" action={<Link className="text-sm font-medium text-brand hover:underline" to="/my-bookings">ดูรายการทั้งหมด</Link>}/><div className="overflow-x-auto"><table className="w-full min-w-[600px] text-left text-sm"><thead className="bg-surface-sunken text-xs text-ink-muted"><tr><th className="px-4 py-3 font-medium">ห้องประชุม</th><th className="px-4 py-3 font-medium">ผู้จอง</th><th className="px-4 py-3 font-medium">วันที่ / เวลา</th><th className="px-4 py-3 font-medium">สถานะ</th></tr></thead><tbody className="divide-y divide-line">{latest.map((booking)=><tr key={booking.bookingId}><td className="px-4 py-3">{rooms.find((room)=>room.roomId===booking.roomId)?.name||'ห้องประชุม'}</td><td className="px-4 py-3">{booking.bookerName||booking.userName}</td><td className="whitespace-nowrap px-4 py-3">{formatShortDate(booking.dateKey)} {formatTimeOfDay(booking.startMin)}–{formatTimeOfDay(booking.endMin)}</td><td className="px-4 py-3"><Badge tone={booking.status==='confirmed'?'ok':booking.status==='pending'?'warn':booking.status==='rejected'?'danger':'neutral'}>{BOOKING_STATUS_LABEL_TH[booking.status]}</Badge></td></tr>)}{latest.length===0&&<tr><td colSpan={4} className="px-4 py-8 text-center text-ink-muted">ยังไม่มีรายการจอง</td></tr>}</tbody></table></div></Card>
+      <Card className="mb-5"><CardHeader title="รายการจองล่าสุด" description="รายการใหม่และรายการที่กำลังจะมาถึง" action={<Link className="inline-flex min-h-11 items-center text-sm font-medium text-brand hover:underline" to="/my-bookings">ดูทั้งหมด</Link>}/>
+      <ul className="divide-y divide-line sm:hidden">{latest.slice(0,3).map((booking)=><li key={booking.bookingId} className="px-5 py-3">
+        <div className="flex items-center justify-between gap-3"><span className="min-w-0 truncate font-medium text-ink">{booking.bookerName||booking.userName}</span><Badge tone={booking.status==='confirmed'?'ok':booking.status==='pending'?'warn':booking.status==='rejected'?'danger':'neutral'}>{BOOKING_STATUS_LABEL_TH[booking.status]}</Badge></div>
+        <div className="mt-0.5 flex items-center justify-between gap-3 text-sm text-ink-muted"><span className="min-w-0 truncate">{rooms.find((room)=>room.roomId===booking.roomId)?.name||'ห้องประชุม'}</span><span data-numeric className="shrink-0">{formatShortDate(booking.dateKey)} {formatTimeOfDay(booking.startMin)}</span></div>
+      </li>)}{latest.length===0&&<li className="px-5 py-8 text-center text-sm text-ink-muted">ยังไม่มีรายการจอง</li>}</ul>
+      <div className="hidden overflow-x-auto sm:block"><table className="w-full min-w-[600px] text-left text-sm"><thead className="bg-surface-sunken text-xs text-ink-muted"><tr><th className="px-4 py-3 font-medium">ห้องประชุม</th><th className="px-4 py-3 font-medium">ผู้จอง</th><th className="px-4 py-3 font-medium">วันที่ / เวลา</th><th className="px-4 py-3 font-medium">สถานะ</th></tr></thead><tbody className="divide-y divide-line">{latest.map((booking)=><tr key={booking.bookingId}><td className="px-4 py-3">{rooms.find((room)=>room.roomId===booking.roomId)?.name||'ห้องประชุม'}</td><td className="px-4 py-3">{booking.bookerName||booking.userName}</td><td className="whitespace-nowrap px-4 py-3">{formatShortDate(booking.dateKey)} {formatTimeOfDay(booking.startMin)}–{formatTimeOfDay(booking.endMin)}</td><td className="px-4 py-3"><Badge tone={booking.status==='confirmed'?'ok':booking.status==='pending'?'warn':booking.status==='rejected'?'danger':'neutral'}>{BOOKING_STATUS_LABEL_TH[booking.status]}</Badge></td></tr>)}{latest.length===0&&<tr><td colSpan={4} className="px-4 py-8 text-center text-ink-muted">ยังไม่มีรายการจอง</td></tr>}</tbody></table></div></Card>
 
       <div className="grid gap-5 lg:grid-cols-3">
         {/* สถานะระบบ — มีความหมายเฉพาะตอนต่อเซิร์ฟเวอร์จริง */}
@@ -176,11 +182,16 @@ export function DashboardPage() {
 
         {/* กฎการจองที่ใช้อยู่จริง อ่านจากชีต Settings */}
         <Card className={isDemo ? 'lg:col-span-3' : 'lg:col-span-2'}>
-          <CardHeader
-            title="กฎการจองที่ใช้อยู่"
-            description="ค่าทั้งหมดนี้อ่านจากการตั้งค่าในระบบ ผู้ดูแลแก้ได้ภายหลัง"
-          />
-          <CardBody>
+          {/* มือถือพับไว้ก่อน (ข้อมูลอ้างอิง ไม่ได้ใช้ทุกครั้ง) จอคอมเปิดไว้ */}
+          <details open={isDesktop} className="group">
+          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 [&::-webkit-details-marker]:hidden">
+            <span className="min-w-0">
+              <span className="block text-[15px] font-semibold text-ink">กฎการจองที่ใช้อยู่</span>
+              <span className="mt-0.5 block text-sm text-ink-muted">ค่าทั้งหมดนี้อ่านจากการตั้งค่าในระบบ ผู้ดูแลแก้ได้ภายหลัง</span>
+            </span>
+            <ChevronDown className="size-5 shrink-0 text-ink-subtle transition-transform duration-200 group-open:rotate-180" aria-hidden="true" />
+          </summary>
+          <CardBody className="border-t border-line/70">
             <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
               <Fact
                 icon={<Clock className="size-4" />}
@@ -221,6 +232,7 @@ export function DashboardPage() {
               />
             </dl>
           </CardBody>
+          </details>
         </Card>
 
       </div>
@@ -240,18 +252,18 @@ function RoomBar({name,count,percent,color,index}:{name:string;count:number;perc
 }
 
 function SummaryCard({icon,label,value,caption,tone,link}:{icon:React.ReactNode;label:string;value:number;caption:string;tone:'blue'|'orange'|'green'|'purple';link?:string}) {
-  // สีของการ์ดตรงกับความหมาย: รออนุมัติ=เหลือง อนุมัติแล้ว=เขียว ส่วนน้ำเงิน/ม่วงเป็นสีตกแต่ง
+  // สีของการ์ดตรงกับความหมาย: รออนุมัติ=เหลือง อนุมัติแล้ว=เขียว ส่วนฟ้า/น้ำเงินเข้มเป็นสีตกแต่ง
   const styles={
     blue:{card:'from-sky-50 ring-sky-100',tile:'from-sky-500 to-blue-600 shadow-sky-500/30'},
     orange:{card:'from-amber-50 ring-amber-100',tile:'from-amber-400 to-orange-500 shadow-amber-500/30'},
     green:{card:'from-emerald-50 ring-emerald-100',tile:'from-emerald-500 to-teal-600 shadow-emerald-500/30'},
-    purple:{card:'from-violet-50 ring-violet-100',tile:'from-violet-500 to-indigo-600 shadow-violet-500/30'},
+    purple:{card:'from-slate-50 ring-slate-200',tile:'from-blue-800 to-slate-900 shadow-slate-700/30'},
   }[tone];
-  const content=<div className="flex items-center gap-3.5 px-4 py-4">
-    <span aria-hidden="true" className={`grid size-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white shadow-lg ${styles.tile}`}>{icon}</span>
-    <span className="min-w-0"><span className="block text-sm font-medium text-ink-muted">{label}</span><strong data-numeric className="block text-[1.75rem] font-semibold leading-tight text-ink"><CountUp value={value}/></strong><span className="text-xs text-ink-subtle">{caption}</span></span>
+  const content=<div className="flex items-center gap-3 p-3 sm:gap-3.5 sm:px-4 sm:py-4">
+    <span aria-hidden="true" className={`grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white shadow-lg sm:size-12 ${styles.tile}`}>{icon}</span>
+    <span className="min-w-0"><span className="block truncate text-xs font-medium text-ink-muted sm:text-sm">{label}</span><strong data-numeric className="block text-2xl font-semibold leading-tight text-ink sm:text-[1.75rem]"><CountUp value={value}/></strong><span className="hidden text-xs text-ink-subtle sm:inline">{caption}</span></span>
   </div>;
-  const shell=`block rounded-[18px] bg-gradient-to-br to-white shadow-card ring-1 ${styles.card}`;
+  const shell=`block rounded-2xl bg-gradient-to-br to-white shadow-card ring-1 sm:rounded-[18px] ${styles.card}`;
   return link?<Link to={link} className={`lift ${shell}`}>{content}</Link>:<div className={shell}>{content}</div>;
 }
 

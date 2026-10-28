@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { LogOut, Menu } from 'lucide-react';
+import { CalendarCheck2, LogOut } from 'lucide-react';
 import { USER_ROLE_LABEL_TH } from '@shared/schemas/user';
 import { cn } from '../../lib/cn';
 import { useApp } from '../../app/providers/AppProvider';
 
-export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
+export function Topbar() {
   const { user, signOut } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -34,15 +34,20 @@ export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
 
   return (
     <header className="sticky top-0 z-[20] border-b border-line bg-surface/95 backdrop-blur">
-      <div className="flex min-h-16 items-center gap-3 px-4 lg:px-6">
-        <button
-          type="button"
-          onClick={onOpenMenu}
-          aria-label="เปิดเมนูหลัก"
-          className="-ml-1 grid size-11 shrink-0 place-items-center rounded-control text-ink-muted transition-colors hover:bg-neutral-soft hover:text-ink lg:hidden"
-        >
-          <Menu className="size-5" aria-hidden="true" />
-        </button>
+      <div className="flex min-h-14 items-center gap-3 px-4 pt-[env(safe-area-inset-top)] lg:min-h-16 lg:px-6">
+        {/* มือถือไม่มีเมนูซ้าย จึงแสดงชื่อแอปไว้ด้านบนให้รู้ว่าอยู่ที่ไหน */}
+        <div className="flex min-w-0 items-center gap-2.5 lg:hidden">
+          <span
+            aria-hidden="true"
+            className="grid size-9 shrink-0 place-items-center rounded-inner bg-brand-gradient text-ink-inverse"
+          >
+            <CalendarCheck2 className="size-5" />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-ink">ระบบจองห้องประชุม</span>
+            <span className="block truncate text-xs text-ink-muted">วิทยาลัยเทคนิคท่าหลวงฯ</span>
+          </span>
+        </div>
 
         <div className="flex-1" />
 
