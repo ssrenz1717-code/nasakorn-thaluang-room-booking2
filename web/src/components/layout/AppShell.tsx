@@ -2,11 +2,25 @@ import { useEffect, useRef, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { useApp } from '../../app/providers/AppProvider';
+import { cn } from '../../lib/cn';
+import { usePendingApprovals } from '../../lib/hooks/usePendingApprovals';
+import { readLocal, writeLocal } from '../../lib/storage';
 import { SidebarContent } from './Sidebar';
 import { Topbar } from './Topbar';
 
+/** จำไว้ว่าผู้ใช้ย่อเมนูซ้ายไว้หรือไม่ เปิดเว็บครั้งหน้าจะได้ไม่ต้องกดใหม่ */
+const SIDEBAR_COLLAPSED_KEY = 'mrb.sidebar.collapsed';
+
 export function AppShell() {
   const { user } = useApp();
+  const [collapsed, setCollapsed] = useState(() => readLocal(SIDEBAR_COLLAPSED_KEY) === '1');
+  const toggleCollapsed = () =>
+    setCollapsed((current) => {
+      writeLocal(SIDEBAR_COLLAPSED_KEY, current ? '0' : '1');
+      return !current;
+    });
+  const pendingApprovals = usePendingApprovals();
+  const badges = { '/approvals': pendingApprovals };
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -33,14 +47,14 @@ export function AppShell() {
   if (user === null) return null;
 
   return (
-    <div className="min-h-dvh lg:grid lg:grid-cols-[272px_1fr]">
+    <div className={cn('min-h-dvh lg:grid lg:transition-[grid-template-columns] lg:duration-200', collapsed ? 'lg:grid-cols-[76px_1fr]' : 'lg:grid-cols-[272px_1fr]')}>
       {/* ลิงก์ข้ามไปเนื้อหาหลัก — เป็นสิ่งแรกที่คนใช้คีย์บอร์ดจะเจอ */}
       <a href="#main" className="sr-only-focusable">
         ข้ามไปที่เนื้อหาหลัก
       </a>
 
       <aside className="hidden lg:sticky lg:top-0 lg:block lg:h-dvh">
-        <SidebarContent role={user.role} />
+        <SidebarContent role={user.role} collapsed={collapsed} onToggleCollapsed={toggleCollapsed} badges={badges} />
       </aside>
 
       {drawerOpen && (
@@ -67,7 +81,7 @@ export function AppShell() {
             >
               <X className="size-5" aria-hidden="true" />
             </button>
-            <SidebarContent role={user.role} onNavigate={() => setDrawerOpen(false)} />
+            <SidebarContent role={user.role} onNavigate={() => setDrawerOpen(false)} badges={badges} />
           </div>
         </div>
       )}

@@ -212,3 +212,33 @@ describe('จองห้องจริงตั้งแต่ต้นจน�
     expect(await screen.findByText('นายทดสอบ ระบบจอง', {}, { timeout: 3000 })).toBeDefined();
   }, 15_000);
 });
+
+describe('เมนูซ้าย: ย่อได้ และมีป้ายแจ้งรายการรออนุมัติ', () => {
+  it('ย่อเมนูแล้วยังกดเมนูได้ และจำไว้หลังรีเฟรชหน้า', async () => {
+    const { user } = await openApp();
+
+    await user.click(screen.getByRole('button', { name: 'ย่อเมนู' }));
+    expect(screen.getByRole('button', { name: 'ขยายเมนู' })).toBeDefined();
+    // ชื่อเมนูซ่อนจากสายตา แต่ลิงก์ยังมีชื่อให้โปรแกรมอ่านหน้าจอและกดได้
+    const nav = screen.getByRole('navigation', { name: 'เมนูหลัก' });
+    expect(within(nav).getByRole('link', { name: 'ห้องประชุม' })).toBeDefined();
+
+    cleanup();
+    await openApp();
+    expect(screen.getByRole('button', { name: 'ขยายเมนู' })).toBeDefined();
+  });
+
+  it('ผู้ดูแลเห็นจำนวนรออนุมัติบนเมนู และหายเมื่ออนุมัติครบ', async () => {
+    const { user, nav } = await openApp();
+
+    // ข้อมูลตั้งต้นมีคำขอรออนุมัติ 1 รายการ
+    const approvals = await within(nav).findByRole('link', { name: /^รออนุมัติ.*มี 1 รายการ/ }, { timeout: 3000 });
+    await user.click(approvals);
+    await user.click(await screen.findByRole('button', { name: 'อนุมัติ' }, { timeout: 3000 }));
+
+    await waitFor(
+      () => expect(within(nav).getByRole('link', { name: 'รออนุมัติ' })).toBeDefined(),
+      { timeout: 3000 },
+    );
+  });
+});
