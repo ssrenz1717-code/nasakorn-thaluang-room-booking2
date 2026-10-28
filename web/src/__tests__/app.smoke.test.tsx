@@ -309,3 +309,26 @@ describe('ปฏิทินมุมมองเดือน', () => {
     expect(todayIndex % 7).toBe(dayOfWeekOfDateKey(toDateKey(new Date())));
   });
 });
+
+describe('ช่องเลือกเวลาในฟอร์มจอง', () => {
+  it('เป็นรายการเวลาทุก 15 นาที และเวลาสิ้นสุดเลื่อนตามเมื่อเวลาเริ่มเลยไป', async () => {
+    const { user, nav } = await openApp();
+    await goTo(user, nav, 'จองห้องประชุม');
+
+    const start = (await screen.findByLabelText('เริ่ม')) as HTMLSelectElement;
+    const end = screen.getByLabelText('สิ้นสุด') as HTMLSelectElement;
+    expect(start.tagName).toBe('SELECT');
+
+    const startValues = [...start.options].map((option) => option.value);
+    expect(startValues[0]).toBe('08:00');
+    expect(startValues).toContain('09:15');
+    expect(startValues.every((value) => Number(value.slice(3)) % 15 === 0)).toBe(true);
+
+    // เวลาสิ้นสุดทุกตัวเลือกต้องหลังเวลาเริ่ม
+    expect([...end.options].every((option) => option.value > start.value)).toBe(true);
+
+    // เลือกเวลาเริ่มเลยเวลาสิ้นสุดเดิม (10:00) -> สิ้นสุดต้องเลื่อนเป็นอีกหนึ่งชั่วโมง
+    fireEvent.change(start, { target: { value: '15:00' } });
+    expect(end.value).toBe('16:00');
+  });
+});
