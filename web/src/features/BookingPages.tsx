@@ -19,16 +19,25 @@ const dateKeyOf = (date: Date) => `${date.getUTCFullYear()}-${String(date.getUTC
 const dateFromKey = (key: string) => new Date(`${key}T12:00:00Z`);
 const shiftDate = (key: string, amount: number) => { const date=dateFromKey(key); date.setUTCDate(date.getUTCDate()+amount); return dateKeyOf(date); };
 
+/** สีประจำห้อง (สีหมวดหมู่ ไม่ใช่สถานะ) — เลี่ยงเหลือง/เขียว/แดงที่ใช้บอกสถานะการจอง */
+const ROOM_BANDS = [
+  'from-sky-500 to-blue-700',
+  'from-violet-500 to-indigo-700',
+  'from-cyan-500 to-teal-700',
+  'from-fuchsia-500 to-purple-700',
+  'from-blue-500 to-indigo-700',
+];
+
 export function RoomsPage() {
   const { api, token } = useApp();
   const [rooms, setRooms] = useState<DemoRoom[]>([]);
   const [error, setError] = useState('');
   useEffect(() => { api.rooms(token).then(({ rooms: result }) => setRooms(result)).catch((e: Error) => setError(e.message)); }, [api, token]);
   return <>
-    <PageHeader title="ห้องประชุม" description="เลือกห้องที่เหมาะกับจำนวนผู้เข้าร่วมและอุปกรณ์ที่ต้องใช้" action={<Link className="inline-flex min-h-11 items-center gap-2 rounded-control bg-brand px-4 font-medium text-ink-inverse shadow-card hover:bg-brand-hover" to="/book"><CalendarPlus className="size-4"/>จองห้อง</Link>} />
+    <PageHeader title="ห้องประชุม" description="เลือกห้องที่เหมาะกับจำนวนผู้เข้าร่วมและอุปกรณ์ที่ต้องใช้" action={<Link className="inline-flex min-h-11 items-center gap-2 rounded-control bg-brand-gradient px-4 font-medium text-ink-inverse shadow-brand hover:brightness-110" to="/book"><CalendarPlus className="size-4"/>จองห้อง</Link>} />
     {error && <Alert tone="danger" title="โหลดห้องไม่สำเร็จ">{error}</Alert>}
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{rooms.map((room) => <Card key={room.roomId}><CardBody className="p-5">
-      <div className="mb-4 flex items-start justify-between"><span className="grid size-11 place-items-center rounded-xl bg-brand-soft text-brand"><DoorOpen className="size-5"/></span><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${room.status === 'active' ? 'bg-ok-soft text-ok' : 'bg-warn-soft text-warn'}`}>{room.status === 'active' ? 'เปิดจอง' : 'ปิดปรับปรุง'}</span></div>
+    <div className="enter-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{rooms.map((room, index) => <Card key={room.roomId} className="lift overflow-hidden"><div aria-hidden="true" className={`relative h-20 bg-gradient-to-br ${ROOM_BANDS[index % ROOM_BANDS.length]} ${room.status === 'active' ? '' : 'grayscale'}`}><span className="absolute -right-6 -top-8 size-28 rounded-full bg-white/15"/><span className="absolute bottom-0 left-5 grid size-12 translate-y-1/2 place-items-center rounded-2xl bg-white text-brand shadow-raised"><DoorOpen className="size-6"/></span></div><CardBody className="p-5 pt-9">
+      <div className="mb-4 flex items-start justify-end"><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${room.status === 'active' ? 'bg-ok-soft text-ok' : 'bg-warn-soft text-warn'}`}>{room.status === 'active' ? 'เปิดจอง' : 'ปิดปรับปรุง'}</span></div>
       <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">{room.code}</p><h2 className="mt-1 text-lg font-semibold text-ink">{room.name}</h2><p className="mt-1 text-sm text-ink-muted">{room.location}</p><p className="mt-3 min-h-10 text-sm text-ink-muted">{room.description || 'ไม่มีรายละเอียดเพิ่มเติม'}</p>
       <p className="mt-4 border-t border-line pt-3 text-sm font-medium">รองรับ {room.capacity} คน</p><div className="mt-2 flex flex-wrap gap-1.5">{room.equipment.map((key) => <span key={key} className="rounded-md bg-surface-sunken px-2 py-1 text-xs text-ink-muted">{ROOM_EQUIPMENT_LABEL_TH[key]}</span>)}</div>
       {room.status === 'active' && <Link className="mt-5 inline-flex min-h-10 items-center font-medium text-brand hover:underline" to={`/book?room=${room.roomId}`}>จองห้องนี้ →</Link>}
@@ -76,7 +85,7 @@ export function BookingsPage({ calendar = false }: { calendar?: boolean }) {
     catch(e){setError(e instanceof Error?e.message:'จองห้องไม่สำเร็จ');}
     finally{setBusyId('');}
   };
-  return <><PageHeader title={calendar?'ปฏิทินการจอง':'รายการจองของฉัน'} description={calendar?'ดูตารางการใช้ห้องในวันที่เลือก':'ติดตามสถานะและจัดการรายการจองของคุณ'} action={<Link className="inline-flex min-h-11 items-center gap-2 rounded-control bg-brand px-4 font-medium text-ink-inverse shadow-card hover:bg-brand-hover" to="/book"><CalendarPlus className="size-4"/>จองห้อง</Link>}/>
+  return <><PageHeader title={calendar?'ปฏิทินการจอง':'รายการจองของฉัน'} description={calendar?'ดูตารางการใช้ห้องในวันที่เลือก':'ติดตามสถานะและจัดการรายการจองของคุณ'} action={<Link className="inline-flex min-h-11 items-center gap-2 rounded-control bg-brand-gradient px-4 font-medium text-ink-inverse shadow-brand hover:brightness-110" to="/book"><CalendarPlus className="size-4"/>จองห้อง</Link>}/>
     {(error||notice)&&!draft&&<Alert tone={error?'danger':'ok'} title={error?'เกิดข้อผิดพลาด':'เรียบร้อย'}>{error||notice}</Alert>}
     {calendar && <CalendarView bookings={bookings} rooms={rooms} day={day} mode={calendarMode} slotMinutes={settings.slotMinutes} onDay={setDay} onMode={setCalendarMode} onCreateSlot={(dateKey,startMin)=>{setDraft({dateKey,startMin});setError('');}}/>}
     {calendar&&draft&&<CalendarBookingDialog draft={draft} rooms={rooms} slotMinutes={settings.slotMinutes} busy={busyId==='create'} error={error} onClose={()=>setDraft(null)} onSubmit={createFromCalendar}/>}

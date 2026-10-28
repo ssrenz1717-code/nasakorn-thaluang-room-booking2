@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  CalendarPlus,
   CalendarClock,
   CheckCircle2,
   ClipboardList,
@@ -15,7 +16,6 @@ import { REQUEST_FACILITY_LABEL_TH, REQUEST_FACILITIES } from '@shared/schemas/b
 import { formatTimeOfDay } from '@shared/time/bangkok';
 import { toDateKey } from '@shared/time/bangkok';
 import { useApp, useCurrentUser, useSettings } from '../../app/providers/AppProvider';
-import { PageHeader } from '../../components/layout/PageHeader';
 import { Alert } from '../../components/ui/Alert';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -80,11 +80,22 @@ export function DashboardPage() {
 
   return (
     <>
-      <PageHeader
-        title={`สวัสดี ${user.displayName}`}
-        description={formatFullDate(today)}
-        action={isDemo ? undefined : (
-          <Button
+      <section className="enter relative mb-6 overflow-hidden rounded-[20px] bg-brand-gradient px-6 py-7 text-ink-inverse shadow-raised sm:px-8">
+        {/* วงกลมตกแต่งด้านหลัง — ไม่มีความหมาย ซ่อนจากโปรแกรมอ่านหน้าจอ */}
+        <span aria-hidden="true" className="absolute -right-12 -top-20 size-64 rounded-full bg-white/10" />
+        <span aria-hidden="true" className="absolute -bottom-24 right-28 size-48 rounded-full bg-cyan-300/20" />
+        <span aria-hidden="true" className="absolute -left-10 -bottom-16 size-40 rounded-full bg-indigo-300/15" />
+        <div className="relative flex flex-wrap items-end justify-between gap-5">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-white/80">วิทยาลัยเทคนิคท่าหลวงซิเมนต์ไทยอนุสรณ์</p>
+            <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">{`สวัสดี ${user.displayName}`}</h1>
+            <p className="mt-1.5 text-[15px] text-white/85">
+              {formatFullDate(today)} · วันนี้มีการใช้ห้อง {todayCount} รายการ
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {!isDemo && (
+              <Button
             variant="secondary"
             icon={<PlugZap className="size-4" />}
             loading={pingState.status === 'busy'}
@@ -93,8 +104,17 @@ export function DashboardPage() {
           >
             ตรวจการเชื่อมต่อ
           </Button>
-        )}
-      />
+            )}
+            <Link
+              to="/book"
+              className="inline-flex min-h-11 items-center gap-2 rounded-control bg-white px-4 text-[15px] font-semibold text-brand shadow-card transition-transform duration-150 motion-safe:active:scale-[0.98] focus-visible:outline-white"
+            >
+              <CalendarPlus className="size-4" aria-hidden="true" />
+              จองห้องประชุม
+            </Link>
+          </div>
+        </div>
+      </section>
 
       {pingState.status === 'done' && (
         <Alert tone="ok" title="เชื่อมต่อเซิร์ฟเวอร์ได้" className="mb-6">
@@ -108,14 +128,14 @@ export function DashboardPage() {
         </Alert>
       )}
 
-      <section aria-label="สรุปการจอง" className="mb-5 grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+      <section aria-label="สรุปการจอง" className="enter-stagger mb-5 grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
         <SummaryCard icon={<CalendarClock className="size-5"/>} label="ใช้ห้องวันนี้" value={todayCount} caption="รายการ" tone="blue"/>
         <SummaryCard icon={<Clock className="size-5"/>} label="รออนุมัติ" value={pendingCount} caption="รายการ" tone="orange" link="/approvals"/>
         <SummaryCard icon={<CheckCircle2 className="size-5"/>} label="อนุมัติแล้ว" value={approvedCount} caption="รายการ" tone="green"/>
         <SummaryCard icon={<ClipboardList className="size-5"/>} label="รวมทั้งหมด" value={bookings.length} caption="รายการ" tone="purple"/>
       </section>
 
-      <section className="mb-5 grid gap-5 xl:grid-cols-2">
+      <section className="enter-stagger mb-5 grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2">
         <Card><CardHeader title="สถิติการใช้ห้องประชุมแต่ละห้อง" description="จำนวนรายการที่ยืนยันแล้ว"/><CardBody><div className="flex h-52 items-end gap-3 overflow-x-auto border-b border-line px-2 pt-4">{roomStats.map(({room,count},index)=><RoomBar key={room.roomId} name={room.name} count={count} percent={Math.max(5,count/(roomStats[0]?.count||1)*65)} color={donutColors[index%donutColors.length]!} index={index}/>)}{!roomStats.length&&<p className="m-auto text-sm text-ink-muted">ยังไม่มีข้อมูลห้องประชุม</p>}</div></CardBody></Card>
         <Card><CardHeader title="สถิติการขอใช้อุปกรณ์/สิ่งอำนวยความสะดวก" description="จากคำขอจองทั้งหมด"/><CardBody><div className="grid items-center gap-5 sm:grid-cols-[190px_1fr]"><div className="mx-auto grid size-44 place-items-center rounded-full" style={{background:facilityTotal?`conic-gradient(${donutStops}, var(--color-neutral-soft) ${sweep*100}% 100%)`:'var(--color-neutral-soft)'}}><div className="grid size-28 place-items-center rounded-full bg-surface text-center"><div><strong data-numeric className="block text-2xl text-ink"><CountUp value={facilityTotal} duration={1100}/></strong><span className="text-xs text-ink-muted">รายการอุปกรณ์</span></div></div></div><ul className="space-y-2">{facilityStats.map((item,index)=><li key={item.key} className="flex items-center justify-between gap-3 text-sm"><span className="flex min-w-0 items-center gap-2"><i className="size-3 shrink-0 rounded-sm" style={{backgroundColor:donutColors[index%donutColors.length]}}/><span className="truncate">{item.label}</span></span><strong data-numeric><CountUp value={item.count} duration={1100}/></strong></li>)}</ul></div></CardBody></Card>
       </section>
@@ -212,7 +232,7 @@ export function DashboardPage() {
 function RoomBar({name,count,percent,color,index}:{name:string;count:number;percent:number;color:string;index:number}) {
   const delay=index*80;
   const height=useAnimatedNumber(percent,{duration:900,delay});
-  return <div className="flex h-full min-w-16 flex-1 flex-col items-center justify-end gap-2">
+  return <div className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
     <span data-numeric className="text-sm font-semibold text-ink"><CountUp value={count} delay={delay}/></span>
     <div className="w-full max-w-14 rounded-t-md" style={{height:`${height}%`,backgroundColor:color}} title={`${name}: ${count} รายการ`}/>
     <span className="line-clamp-2 min-h-9 w-full text-center text-[11px] leading-4 text-ink-muted">{name}</span>
@@ -220,9 +240,19 @@ function RoomBar({name,count,percent,color,index}:{name:string;count:number;perc
 }
 
 function SummaryCard({icon,label,value,caption,tone,link}:{icon:React.ReactNode;label:string;value:number;caption:string;tone:'blue'|'orange'|'green'|'purple';link?:string}) {
-  const styles={blue:'bg-sky-50 text-sky-700 ring-sky-200',orange:'bg-amber-50 text-amber-700 ring-amber-200',green:'bg-emerald-50 text-emerald-700 ring-emerald-200',purple:'bg-violet-50 text-violet-700 ring-violet-200'};
-  const content=<CardBody className="flex items-center gap-4 p-4"><span className={`grid size-14 shrink-0 place-items-center rounded-inner ring-1 ${styles[tone]}`}>{icon}</span><span className="min-w-0"><span className="block text-sm text-ink-muted">{label}</span><strong data-numeric className="block text-3xl font-semibold leading-tight text-ink"><CountUp value={value}/></strong><span className="text-xs text-ink-subtle">{caption}</span></span></CardBody>;
-  return link?<Link to={link} className="block rounded-card bg-surface shadow-card ring-1 ring-line/70 transition-shadow hover:shadow-raised">{content}</Link>:<Card>{content}</Card>;
+  // สีของการ์ดตรงกับความหมาย: รออนุมัติ=เหลือง อนุมัติแล้ว=เขียว ส่วนน้ำเงิน/ม่วงเป็นสีตกแต่ง
+  const styles={
+    blue:{card:'from-sky-50 ring-sky-100',tile:'from-sky-500 to-blue-600 shadow-sky-500/30'},
+    orange:{card:'from-amber-50 ring-amber-100',tile:'from-amber-400 to-orange-500 shadow-amber-500/30'},
+    green:{card:'from-emerald-50 ring-emerald-100',tile:'from-emerald-500 to-teal-600 shadow-emerald-500/30'},
+    purple:{card:'from-violet-50 ring-violet-100',tile:'from-violet-500 to-indigo-600 shadow-violet-500/30'},
+  }[tone];
+  const content=<div className="flex items-center gap-4 p-5">
+    <span aria-hidden="true" className={`grid size-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br text-white shadow-lg ${styles.tile}`}>{icon}</span>
+    <span className="min-w-0"><span className="block text-sm font-medium text-ink-muted">{label}</span><strong data-numeric className="block text-3xl font-semibold leading-tight text-ink"><CountUp value={value}/></strong><span className="text-xs text-ink-subtle">{caption}</span></span>
+  </div>;
+  const shell=`block rounded-[18px] bg-gradient-to-br to-white shadow-card ring-1 ${styles.card}`;
+  return link?<Link to={link} className={`lift ${shell}`}>{content}</Link>:<div className={shell}>{content}</div>;
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {

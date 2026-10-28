@@ -69,6 +69,13 @@
   --shadow-raised: 0 1px 2px hsl(220 30% 20% / 0.05), 0 4px 12px hsl(220 30% 20% / 0.07);
   --shadow-overlay: 0 8px 32px hsl(220 30% 20% / 0.16);
 
+  /* สีตกแต่ง (ไม่ใช้สื่อสถานะ) — เหลือง/เขียว/แดงสงวนไว้ให้สถานะการจองเท่านั้น */
+  --color-brand-deep: #1e3a8a;
+  --color-indigo: #4338ca;
+  --color-cyan: #0891b2;
+
+  --shadow-brand: 0 6px 18px -6px hsl(225 80% 40% / 0.55);
+
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 
   /* ลำดับชั้นการซ้อน — ห้ามใส่เลข z-index ตามใจในคอมโพเนนต์ */
@@ -86,7 +93,12 @@
   }
 
   body {
-    background-color: var(--color-canvas);
+    /* แสงสีจาง ๆ มุมบนขวาและล่างซ้าย ให้พื้นไม่แบนเกินไป โดยไม่รบกวนการอ่าน */
+    background:
+      radial-gradient(1100px 520px at 100% -8%, hsl(219 95% 90% / 0.55), transparent 62%),
+      radial-gradient(900px 460px at -8% 108%, hsl(248 85% 93% / 0.55), transparent 60%),
+      var(--color-canvas);
+    background-attachment: fixed;
     color: var(--color-ink);
     font-family: var(--font-sans);
     /* ภาษาไทยไม่มีช่องว่างระหว่างคำ ความสูงบรรทัดต้องมากกว่าภาษาอังกฤษจึงอ่านสบาย */
@@ -120,6 +132,14 @@
     border-radius: 4px;
   }
 
+  /* Tailwind v4 ตั้งเคอร์เซอร์ปุ่มเป็นลูกศร — เปลี่ยนเป็นรูปมือให้รู้ว่ากดได้ */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  summary,
+  label:has(> input[type='checkbox']) {
+    cursor: pointer;
+  }
+
   ::selection {
     background-color: var(--color-brand-soft);
     color: var(--color-brand-active);
@@ -127,6 +147,35 @@
 }
 
 @layer utilities {
+  /* น้ำเงินเข้ม -> คราม ข้อความขาวบนพื้นนี้ผ่าน contrast ทุกจุดของการไล่สี (ต่ำสุด ~6.7:1) */
+  .bg-brand-gradient {
+    background-image: linear-gradient(135deg, var(--color-brand-deep) 0%, #1e40af 45%, var(--color-indigo) 100%);
+  }
+
+  /* เนื้อหาโผล่ขึ้นทีละชิ้นตอนเปิดหน้า (ปิดเองเมื่อผู้ใช้ตั้งเครื่องให้ลดการเคลื่อนไหว) */
+  .enter {
+    animation: rise 420ms var(--ease-out) both;
+  }
+  .enter-stagger > * {
+    animation: rise 420ms var(--ease-out) both;
+  }
+  .enter-stagger > *:nth-child(2) { animation-delay: 60ms; }
+  .enter-stagger > *:nth-child(3) { animation-delay: 120ms; }
+  .enter-stagger > *:nth-child(4) { animation-delay: 180ms; }
+  .enter-stagger > *:nth-child(5) { animation-delay: 240ms; }
+  .enter-stagger > *:nth-child(6) { animation-delay: 300ms; }
+
+  /* การ์ดที่กดได้ยกขึ้นเล็กน้อยเมื่อชี้ — เฉพาะอุปกรณ์ที่มีเมาส์ ไม่ให้ค้างบนจอสัมผัส */
+  .lift {
+    transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .lift:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-raised);
+    }
+  }
+
   /* ข้อความที่มีแต่โปรแกรมอ่านหน้าจอได้ยิน ใช้กับลิงก์ข้ามไปเนื้อหาหลัก */
   .sr-only-focusable {
     position: absolute;

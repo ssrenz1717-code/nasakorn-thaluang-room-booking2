@@ -39,7 +39,7 @@ export function AppShell() {
         ข้ามไปที่เนื้อหาหลัก
       </a>
 
-      <aside className="hidden border-r border-line lg:sticky lg:top-0 lg:block lg:h-dvh">
+      <aside className="hidden lg:sticky lg:top-0 lg:block lg:h-dvh">
         <SidebarContent role={user.role} />
       </aside>
 
@@ -63,7 +63,7 @@ export function AppShell() {
               type="button"
               onClick={() => setDrawerOpen(false)}
               aria-label="ปิดเมนู"
-              className="absolute right-2 top-3 z-10 grid size-11 place-items-center rounded-control text-ink-muted hover:bg-neutral-soft"
+              className="absolute right-2 top-3 z-10 grid size-11 place-items-center rounded-control text-white hover:bg-white/15 focus-visible:outline-white"
             >
               <X className="size-5" aria-hidden="true" />
             </button>

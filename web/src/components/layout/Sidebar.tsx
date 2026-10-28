@@ -14,17 +14,17 @@ export function SidebarContent({
   const items = visibleNavItems(role);
 
   return (
-    <div className="flex h-full flex-col bg-surface">
+    <div className="bg-brand-gradient flex h-full flex-col text-ink-inverse">
       <div className="flex items-center gap-2.5 px-5 py-4">
         <span
           aria-hidden="true"
-          className="grid size-9 shrink-0 place-items-center rounded-inner bg-brand text-ink-inverse"
+          className="grid size-9 shrink-0 place-items-center rounded-inner bg-white/15 text-ink-inverse ring-1 ring-white/25"
         >
           <CalendarCheck2 className="size-5" />
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-ink">ระบบจองห้องประชุม</p>
-          <p className="truncate text-xs text-ink-subtle">ภายในองค์กร</p>
+          <p className="truncate text-sm font-semibold">ระบบจองห้องประชุม</p>
+          <p className="truncate text-xs text-white/80">วิทยาลัยเทคนิคท่าหลวงฯ</p>
         </div>
       </div>
 
@@ -39,10 +39,11 @@ export function SidebarContent({
                   className={({ isActive }) =>
                     cn(
                       'flex min-h-11 items-center gap-3 rounded-control px-3 text-[15px] font-medium',
-                      'transition-colors duration-150',
+                      // วงแหวนโฟกัสค่าเริ่มต้นเป็นสีน้ำเงิน จะมองไม่เห็นบนพื้นน้ำเงิน จึงเปลี่ยนเป็นสีขาว
+                      'transition-colors duration-150 focus-visible:outline-white',
                       isActive
-                        ? 'bg-brand-soft text-brand'
-                        : 'text-ink-muted hover:bg-neutral-soft hover:text-ink',
+                        ? 'bg-white text-brand shadow-card'
+                        : 'text-white/85 hover:bg-white/12 hover:text-white',
                     )
                   }
                 >

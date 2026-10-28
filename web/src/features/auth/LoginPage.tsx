@@ -46,7 +46,7 @@ export function LoginPage() {
   };
 
   return (
-    <div className="grid min-h-dvh place-items-center bg-canvas p-4 sm:p-6">
+    <div className="bg-brand-gradient grid min-h-dvh place-items-center p-4 sm:p-6">
       <section className="w-full max-w-md">
         <div className="w-full rounded-card bg-surface p-6 shadow-raised ring-1 ring-line/70 sm:p-8">
           <div className="mb-6">
