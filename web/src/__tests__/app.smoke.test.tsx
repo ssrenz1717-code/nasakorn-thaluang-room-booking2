@@ -364,3 +364,28 @@ describe('ห้องไม่ว่าง: บอกตั้งแต่ต�
     expect((screen.getByRole('button', { name: /ส่งคำขอจอง/ }) as HTMLButtonElement).disabled).toBe(false);
   });
 });
+
+describe('การตั้งค่าเชื่อมต่อระบบ', () => {
+  it('ผู้ดูแลเปิดหน้าต่าง ใส่ลิงก์ผิดถูกเตือน ใส่ถูกแล้วบันทึก เปิดใหม่ค่ายังอยู่', async () => {
+    const { user } = await openApp();
+    await user.click(await screen.findByRole('button', { name: 'การตั้งค่าเชื่อมต่อระบบ' }));
+    const dialog = screen.getByRole('dialog', { name: /การตั้งค่าเชื่อมต่อระบบ/ });
+
+    const endpoint = within(dialog).getByLabelText(/Web App URL/);
+    await user.type(endpoint, 'https://example.com/not-apps-script');
+    await user.tab();
+    expect(within(dialog).getByText(/ลงท้ายด้วย \/exec/)).toBeDefined();
+
+    await user.clear(endpoint);
+    await user.type(endpoint, 'https://script.google.com/macros/s/AKfycbx123456789abc/exec');
+    await user.type(within(dialog).getByLabelText(/Google Sheets/), 'https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit');
+    expect(within(dialog).getByText('1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789')).toBeDefined();
+    await user.click(within(dialog).getByRole('button', { name: 'บันทึก' }));
+    expect(screen.queryByRole('dialog', { name: /การตั้งค่าเชื่อมต่อระบบ/ })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'การตั้งค่าเชื่อมต่อระบบ' }));
+    const again = screen.getByRole('dialog', { name: /การตั้งค่าเชื่อมต่อระบบ/ });
+    expect((within(again).getByLabelText(/Web App URL/) as HTMLInputElement).value).toBe('https://script.google.com/macros/s/AKfycbx123456789abc/exec');
+  });
+});
+

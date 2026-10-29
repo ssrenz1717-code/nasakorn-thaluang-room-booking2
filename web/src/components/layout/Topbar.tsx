@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { CalendarCheck2, LogOut } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { CalendarCheck2, LogOut, Settings } from 'lucide-react';
 import { USER_ROLE_LABEL_TH } from '@shared/schemas/user';
 import { cn } from '../../lib/cn';
 import { useApp } from '../../app/providers/AppProvider';
+import { ConnectionSettingsDialog } from './ConnectionSettingsDialog';
 
 export function Topbar() {
   const { user, signOut } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // ปิดเมนูโปรไฟล์เมื่อกด Escape หรือคลิกข้างนอก — พฤติกรรมที่ผู้ใช้คาดหวังจากเมนูทุกตัว
@@ -50,6 +53,19 @@ export function Topbar() {
         </div>
 
         <div className="flex-1" />
+
+        {user?.role === 'admin' && (
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            aria-haspopup="dialog"
+            aria-label="การตั้งค่าเชื่อมต่อระบบ"
+            title="การตั้งค่าเชื่อมต่อระบบ & API"
+            className="grid size-11 shrink-0 place-items-center rounded-control text-ink-muted transition-colors hover:bg-neutral-soft hover:text-ink"
+          >
+            <Settings className="size-5" aria-hidden="true" />
+          </button>
+        )}
 
         <div ref={menuRef} className="relative shrink-0">
           <button
@@ -107,6 +123,8 @@ export function Topbar() {
           )}
         </div>
       </div>
+      {/* ต้องวางนอก header: backdrop-blur ทำให้ fixed ข้างในยึดกรอบ header แทนทั้งจอ */}
+      {settingsOpen && createPortal(<ConnectionSettingsDialog onClose={() => setSettingsOpen(false)} />, document.body)}
     </header>
   );
 }

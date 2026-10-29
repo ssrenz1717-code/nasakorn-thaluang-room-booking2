@@ -32,6 +32,10 @@
   --color-line: hsl(220 16% 90%);
   --color-line-strong: hsl(220 14% 82%);
 
+  /* แผงตั้งค่าระบบ: หัวสีเข้มแยกจากหน้าทั่วไป ไอคอนทองบนพื้นเข้ม (contrast ~9:1) */
+  --color-panel: hsl(224 44% 12%);
+  --color-gold: hsl(43 96% 56%);
+
   /* ตัวอักษร */
   --color-ink: hsl(222 32% 16%);
   --color-ink-muted: hsl(220 12% 42%);
