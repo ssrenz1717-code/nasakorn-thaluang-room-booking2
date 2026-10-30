@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { FormPreviewDialog } from '../requestForm/FormPreviewDialog';
+import { useLiveRefresh } from '../../lib/hooks/useLiveRefresh';
 import { Link } from 'react-router-dom';
-import { Check, ClipboardCheck, Printer, X } from 'lucide-react';
+import { Check, ClipboardCheck, FileText, Printer, X } from 'lucide-react';
 import { APPROVAL_STEPS, currentApprovalStep, isAwaitingRole, stepForRole } from '@shared/domain/approval';
 import { REQUEST_FACILITY_LABEL_TH, type RequestFacility } from '@shared/schemas/booking';
 import { isOpenLocationRoom } from '@shared/schemas/room';
@@ -45,6 +47,8 @@ export function ApprovalsPage() {
     .then(([b, r]) => { setBookings(b.bookings); setRooms(r.rooms); setLoaded(true); })
     .catch((e: Error) => setError(e.message)), [api, token]);
   useEffect(() => { void load(); }, [load]);
+  // คนอื่นลงนามขั้นก่อนหน้าเสร็จ คำขอต้องเด้งมาที่หน้านี้เองโดยไม่ต้องรีเฟรช
+  useLiveRefresh(load);
 
   const myStep = stepForRole(user.role);
   const isApprover = myStep > 0;
@@ -143,6 +147,8 @@ export function ApprovalsPage() {
 
 function RequestCard({ booking, rooms, compact = false, children }: { booking: DemoBooking; rooms: DemoRoom[]; compact?: boolean; children?: React.ReactNode }) {
   const room = rooms.find((item) => item.roomId === booking.roomId);
+  const [formOpen, setFormOpen] = useState(false);
+  const closeForm = useCallback(() => setFormOpen(false), []);
   const place = isOpenLocationRoom(room) ? `${booking.customLocation || 'สถานที่อื่น'} (ระบุเอง)` : room?.name ?? 'ห้องประชุม';
   const facilities = [
     ...(booking.requestedFacilities ?? []).map((key) => REQUEST_FACILITY_LABEL_TH[key as RequestFacility] ?? key),
@@ -158,9 +164,9 @@ function RequestCard({ booking, rooms, compact = false, children }: { booking: D
             <h3 className="text-[17px] font-semibold text-ink">{booking.title || 'ไม่ระบุเรื่อง'}</h3>
             <p className="mt-0.5 text-sm text-ink">{dateText(booking.dateKey)} เวลา {timeText(booking.startMin)}–{timeText(booking.endMin)} น.</p>
           </div>
-          <Link to={`/reports?booking=${booking.bookingId}`} className="inline-flex min-h-10 items-center gap-1.5 text-sm font-medium text-brand hover:underline">
-            <Printer className="size-4" aria-hidden="true" />ดูแบบฟอร์ม
-          </Link>
+          <button type="button" onClick={() => setFormOpen(true)} className="inline-flex min-h-10 items-center gap-1.5 rounded-control px-3 text-sm font-medium text-brand ring-1 ring-brand-border transition-colors hover:bg-brand-soft">
+            <FileText className="size-4" aria-hidden="true" />ดูแบบฟอร์มที่ผู้จองกรอก
+          </button>
         </div>
         {!compact && (
           <dl className="mt-4 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
@@ -175,6 +181,17 @@ function RequestCard({ booking, rooms, compact = false, children }: { booking: D
         <ApprovalProgress booking={booking} className="mt-4" />
         {children}
       </CardBody>
+      {formOpen && (
+        <FormPreviewDialog
+          title={`แบบคำขอของ ${booking.bookerName || booking.userName}`}
+          subtitle="ข้อมูลตามที่ผู้จองกรอกไว้ ตรวจได้ก่อนลงนาม"
+          data={{ ...booking, bookerName: booking.bookerName || booking.userName }}
+          roomCode={room?.code ?? ''}
+          roomName={room?.name}
+          onClose={closeForm}
+          footer={<Link to={`/reports?booking=${booking.bookingId}`} className="inline-flex min-h-10 items-center gap-1.5 rounded-control px-3 text-sm font-medium text-brand hover:bg-brand-soft"><Printer className="size-4" aria-hidden="true" />เปิดหน้าพิมพ์</Link>}
+        />
+      )}
     </Card>
   );
 }

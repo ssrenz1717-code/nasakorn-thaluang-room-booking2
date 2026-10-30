@@ -49,8 +49,10 @@ function useFitHourHeight(headerRef: React.RefObject<HTMLDivElement | null>): nu
 }
 
 export function WeekTimeGrid({
-  dates, bookings, rooms, selectedDay, today, slotMinutes, selection, onDay, onCreateSlot,
+  dates, bookings, rooms, selectedDay, today, slotMinutes, selection, onDay, onCreateSlot, onOpenBooking,
 }: {
+  /** กดรายการจองเพื่อดูรายละเอียด */
+  onOpenBooking: (booking: DemoBooking) => void;
   dates: string[];
   bookings: DemoBooking[];
   rooms: DemoRoom[];
@@ -80,7 +82,7 @@ export function WeekTimeGrid({
   }, [selectedDay, dates[0]]);
 
   const activeBookings = bookings.filter(
-    (booking) => dates.includes(booking.dateKey) && ['pending', 'confirmed'].includes(booking.status) && booking.startMin < DAY_END && booking.endMin > DAY_START,
+    (booking) => dates.includes(booking.dateKey) && ['confirmed', 'completed'].includes(booking.status) && booking.startMin < DAY_END && booking.endMin > DAY_START,
   );
   const slots = Array.from({ length: Math.ceil((DAY_END - DAY_START) / slotMinutes) }, (_, index) => DAY_START + index * slotMinutes);
   const columns = 'grid-cols-[48px_repeat(7,minmax(60px,1fr))] sm:grid-cols-[64px_repeat(7,minmax(118px,1fr))]';
@@ -178,7 +180,7 @@ export function WeekTimeGrid({
                   return (
                     <button
                       key={booking.bookingId}
-                      onClick={(event) => { event.stopPropagation(); onDay(key); }}
+                      onClick={(event) => { event.stopPropagation(); onDay(key); onOpenBooking(booking); }}
                       title={`${timeText(booking.startMin)}–${timeText(booking.endMin)} · ${booking.bookerName || booking.userName}${roomName ? ` · ${roomName}` : ''}${booking.status === 'pending' ? ' (รออนุมัติ)' : ''}`}
                       className={cn(
                         'absolute z-10 overflow-hidden rounded-md py-1 text-left text-[11px] leading-tight shadow-sm ring-1 ring-inset focus-visible:outline-2 focus-visible:outline-brand sm:text-xs',

@@ -450,11 +450,24 @@ describe('แบบคำขอใช้ห้อง (กรอกผ่าน�
     renderApp();
     const sheet = await screen.findByRole('article', { name: 'แบบคำขออนุญาตใช้ห้องประชุม' }, { timeout: 5000 });
     const text = sheet.textContent ?? '';
-    for (const expected of ['อ.สมชาย ใจดี', 'แผนกวิชาเทคโนโลยีสารสนเทศ', '081-234-5678', 'ประชุมครูและบุคลากรประจำเดือน', '09.00', '10.30', 'นายเอกราช เขียวทอง', 'รองผู้อำนวยการฝ่ายพัฒนายุทธศาสตร์และแผนงาน', 'ลงนามผ่านระบบแล้ว']) {
+    for (const expected of ['อ.สมชาย ใจดี', 'แผนกวิชาเทคโนโลยีสารสนเทศ', '081-234-5678', 'ประชุมครูและบุคลากรประจำเดือน', '09.00', '10.30', 'นายเอกราช เขียวทอง', 'รองผู้อำนวยการฝ่ายพัฒนายุทธศาสตร์และแผนงาน']) {
       expect(text).toContain(expected);
     }
+    // ใช้ชื่อแทนลายเซ็น พร้อมวันที่และเวลาที่กดอนุมัติ
+    expect(text).toMatch(/วันที่.*เวลา \d{2}\.\d{2} น\./);
     // ห้องที่เลือก (หอประชุมอดิเรกสาร) ติ๊ก 1 ช่อง + อุปกรณ์ 3 รายการ + พร้อมใช้งาน = 5 ช่อง
     expect(within(sheet).getAllByRole('img', { name: 'เลือก' })).toHaveLength(5);
+  });
+
+  it('ยังไม่มีใครกดอนุมัติ ห้ามมีชื่อผู้อนุมัติในแบบฟอร์ม', async () => {
+    window.location.hash = '#/reports?booking=demo-bk-5';
+    renderApp();
+    const sheet = await screen.findByRole('article', { name: 'แบบคำขออนุญาตใช้ห้องประชุม' }, { timeout: 5000 });
+    const text = sheet.textContent ?? '';
+    expect(text).toContain('ประชุมเตรียมงานวันวิชาการ');
+    for (const approver of ['นายวัชรพงศ์ โสภา', 'นายเอกราช เขียวทอง', 'นายชาตรี เริงชัยภูมิ']) {
+      expect(text).not.toContain(approver);
+    }
   });
 
   it('หน้าจองดูตัวอย่างแบบฟอร์มที่กำลังกรอกได้ก่อนส่ง', async () => {
@@ -467,6 +480,21 @@ describe('แบบคำขอใช้ห้อง (กรอกผ่าน�
     expect(within(dialog).getByRole('article').textContent).toContain('นางสาวใจดี มีสุข');
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'ตัวอย่างแบบคำขอ' })).toBeNull();
+  });
+});
+
+describe('ปฏิทินแสดงเฉพาะรายการที่อนุมัติครบ 3 ขั้น', () => {
+  it('คำขอที่ยังรออนุมัติไม่ขึ้นปฏิทิน และกดรายการเพื่อดูรายละเอียดได้', async () => {
+    const { user, nav } = await openApp();
+    await goTo(user, nav, 'ปฏิทินการจอง');
+    // ข้อมูลตั้งต้น: "นางสุดารัตน์ บุญมา" (พรุ่งนี้) ยังรอขั้นที่ 1 อยู่
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /ประชุม|อ\.สมชาย/ }).length).toBeGreaterThan(0), { timeout: 3000 });
+    expect(screen.queryByTitle(/นางสุดารัตน์ บุญมา/)).toBeNull();
+
+    await user.click(screen.getAllByTitle(/อ\.สมชาย ใจดี/)[0]!);
+    const dialog = await screen.findByRole('dialog', { name: 'ประชุมครูและบุคลากรประจำเดือน' });
+    expect(within(dialog).getByText('หอประชุมอดิเรกสาร')).toBeDefined();
+    expect(within(dialog).getByRole('link', { name: /ดูแบบฟอร์มคำขอ/ })).toBeDefined();
   });
 });
 

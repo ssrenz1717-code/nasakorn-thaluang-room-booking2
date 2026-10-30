@@ -8,8 +8,10 @@ import { roomColorOf } from './roomBands';
  * และดาวน์โหลดรายการที่กรองแล้วเป็นไฟล์ Excel (CSV)
  */
 export function CalendarFilters({
-  rooms, selectedRooms, query, resultCount, onRooms, onQuery, onExport,
+  rooms, selectedRooms, query, resultCount, approvedCount, onRooms, onQuery, onExport,
 }: {
+  /** จำนวนที่อนุมัติครบแล้ว (ที่แสดงบนปฏิทิน) */
+  approvedCount: number;
   rooms: DemoRoom[];
   /** ว่าง = ทุกห้อง */
   selectedRooms: string[];
@@ -56,6 +58,7 @@ export function CalendarFilters({
         </button>
       </div>
 
+      <p className="text-sm text-ink-muted">บนปฏิทิน {approvedCount} รายการที่อนุมัติแล้ว ไฟล์ Excel มีทุกสถานะ (รวมที่รออนุมัติ) {resultCount} รายการ</p>
       <div role="group" aria-label="กรองตามห้องประชุม" className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
         <button
           type="button"

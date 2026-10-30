@@ -30,6 +30,8 @@ const part = (date: Date, options: Intl.DateTimeFormatOptions) =>
   new Intl.DateTimeFormat('th-TH', { ...options, timeZone: 'Asia/Bangkok' }).format(date);
 const time = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}.${String(min % 60).padStart(2, '0')}`;
 const longDate = (iso: string) => part(new Date(iso), { day: 'numeric', month: 'long', year: 'numeric' });
+/** วันที่พร้อมเวลาที่ลงนาม เช่น "30 ตุลาคม 2569 เวลา 09.15 น." */
+const signedAt = (iso: string) => `${longDate(iso)} เวลา ${part(new Date(iso), { hour: '2-digit', minute: '2-digit', hour12: false }).replace(':', '.')} น.`;
 
 /** คำนำหน้าตามแบบฟอร์ม — ยาวก่อน ("นางสาว" ต้องเช็กก่อน "นาง") */
 const PREFIXES = ['นางสาว', 'นาง', 'นาย'] as const;
@@ -115,7 +117,7 @@ export function RequestFormSheet({ data, roomCode, roomName, className }: {
       <p>ข้าพเจ้าขอรับรองว่าจะดูแลรักษาทรัพย์สินของทางราชการ และปฏิบัติตามระเบียบของวิทยาลัยโดยเคร่งครัด</p>
 
       <div className="mt-[2mm] grid grid-cols-2 border border-black">
-        <SignBox title="ผู้ยื่นคำขอ" signedText={data.createdAt ? 'ยื่นคำขอผ่านระบบ' : ''} name={data.bookerName} date={data.createdAt ? longDate(data.createdAt) : ''} />
+        <SignBox title="ผู้ยื่นคำขอ" signedText={data.createdAt ? data.bookerName : ''} name={data.bookerName} date={data.createdAt ? signedAt(data.createdAt) : ''} />
         <ApproverBox step={2} entry={signed(2)} title="หัวหน้างาน/ผู้รับรอง" />
         <ApproverBox step={1} entry={signed(1)} title="เจ้าหน้าที่ผู้ตรวจสอบห้อง" inspector />
         <ApproverBox step={3} entry={signed(3)} title="ผู้พิจารณา" />
@@ -153,30 +155,36 @@ function SignBox({ title, signedText, name, position, date, children, showDate =
   return (
     <section className="flex min-h-[40mm] flex-col items-center border-black px-[2mm] pb-[2mm] pt-[1mm] text-center odd:border-r [&:nth-child(-n+2)]:border-b">
       <h2 className="font-bold">{title}</h2>
-      <p className="mt-[5mm]">ลงชื่อ <Fill w="42mm" center>{signedText}</Fill></p>
+      <p className="mt-[5mm]">ลงชื่อ <Fill w="48mm" center>{signedText}</Fill></p>
       <p>(<Fill w="48mm" center>{name}</Fill>)</p>
       {position && <p className="whitespace-nowrap text-[10.5pt]">{position}</p>}
+      {showDate && <p>วันที่ <Fill w="58mm" center>{date}</Fill></p>}
       {children}
-      {showDate && <p>วันที่ <Fill w="42mm" center>{date}</Fill></p>}
     </section>
   );
 }
 
+/**
+ * ช่องผู้ลงนาม: ใช้ "ชื่อ" แทนลายเซ็น และแสดงเฉพาะเมื่อผู้นั้นกดในระบบแล้วเท่านั้น
+ * ยังไม่กด = ช่องว่างให้เห็นว่ายังรออยู่ (ตำแหน่งยังพิมพ์ไว้ตามแบบฟอร์มต้นฉบับ)
+ */
 function ApproverBox({ step, entry, title, inspector = false }: { step: number; entry: ApprovalEntry | undefined; title: string; inspector?: boolean }) {
   const info = APPROVAL_STEPS[step - 1]!;
-  const signedText = entry ? (entry.decision === 'approve' ? 'ลงนามผ่านระบบแล้ว' : 'ไม่อนุมัติ (ผ่านระบบ)') : '';
-  const date = entry ? longDate(entry.at) : '';
+  const rejected = entry?.decision === 'reject';
+  const signature = entry ? (rejected ? `${entry.name} (ไม่อนุมัติ)` : entry.name) : '';
+  const date = entry ? signedAt(entry.at) : '';
   return (
-    <SignBox title={title} signedText={signedText} name={entry?.name ?? info.printedName} position={info.printedPosition} date={date} showDate={!inspector}>
+    <SignBox title={title} signedText={signature} name={entry?.name ?? ''} position={info.printedPosition} date={date}>
       {inspector && (
         <>
-          <p className="mt-[1mm]"><Box checked={entry?.decision === 'approve'} /> พร้อมใช้งาน&emsp;<Box checked={entry?.decision === 'reject'} /> ไม่พร้อมใช้งาน</p>
+          <p className="mt-[1mm]"><Box checked={entry?.decision === 'approve'} /> พร้อมใช้งาน&emsp;<Box checked={rejected} /> ไม่พร้อมใช้งาน</p>
           <p className="mt-auto flex w-full items-baseline gap-x-[1.5mm] whitespace-nowrap text-left">
             <span className="font-bold">หมายเหตุ</span>
-            <Fill grow>{entry ? [entry.reason, `ตรวจเมื่อ ${date}`].filter(Boolean).join(', ') : ''}</Fill>
+            <Fill grow>{entry?.reason}</Fill>
           </p>
         </>
       )}
+      {!inspector && rejected && entry.reason && <p className="text-[10.5pt]">เหตุผล: {entry.reason}</p>}
     </SignBox>
   );
 }

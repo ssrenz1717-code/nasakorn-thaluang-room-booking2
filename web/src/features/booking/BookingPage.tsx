@@ -36,6 +36,16 @@ const FACILITY_ICON: Record<RequestFacility, LucideIcon> = {
 
 /** ปุ่มลัดความยาวการประชุม — ส่วนใหญ่ประชุมกันครึ่งชั่วโมงถึงสองชั่วโมง */
 const DURATIONS = [30, 60, 90, 120];
+/**
+ * อุปกรณ์ที่ขอบ่อยแต่ไม่มีช่องในแบบฟอร์มต้นฉบับ — กดแล้วเติมลงช่อง "อุปกรณ์อื่น ๆ"
+ * ตอนพิมพ์จึงไปอยู่ที่ "☐ อื่น ๆ ..." ของแบบฟอร์มตามเดิม
+ */
+const EXTRA_ITEMS = ['โน้ตบุ๊ก', 'ปลั๊กพ่วง'];
+const otherItems = (text: string) => text.split(',').map((item) => item.trim()).filter(Boolean);
+const toggleOtherItem = (text: string, item: string) => {
+  const items = otherItems(text);
+  return (items.includes(item) ? items.filter((value) => value !== item) : [...items, item]).join(', ');
+};
 /** คำนำหน้าตามแบบคำขอ "ข้าพเจ้า นาย/นาง/นางสาว" ('' = ไม่ระบุ เช่น ใช้ยศหรือตำแหน่งวิชาการในชื่อเอง) */
 const NAME_PREFIXES = ['นาย', 'นาง', 'นางสาว', ''];
 const durationText = (minutes: number) =>
@@ -392,6 +402,22 @@ export function BookingPage() {
               <div>
                 <label className={labelClass} htmlFor="other-facility">อุปกรณ์อื่น ๆ</label>
                 <input className={inputClass} id="other-facility" maxLength={300} value={otherFacility} onChange={(e) => setOtherFacility(e.target.value)} placeholder="ระบุเพิ่มเติมถ้ามี" />
+                <div role="group" aria-label="เพิ่มอุปกรณ์อื่นที่ขอบ่อย" className="mt-2 flex flex-wrap gap-2">
+                  {EXTRA_ITEMS.map((item) => {
+                    const on = otherItems(otherFacility).includes(item);
+                    return (
+                      <button
+                        key={item}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => setOtherFacility(toggleOtherItem(otherFacility, item))}
+                        className={cn('min-h-9 rounded-pill px-3 text-sm ring-1 ring-inset transition-colors duration-150', on ? 'bg-ok-soft font-medium text-ok ring-ok-border' : 'bg-surface text-ink-muted ring-line hover:text-ink')}
+                      >
+                        {on ? '✓ ' : '+ '}{item}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
             <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-control border border-line p-3.5 text-sm leading-6 text-ink-muted transition-colors duration-150 has-[:checked]:border-ok-border has-[:checked]:bg-ok-soft has-[:checked]:font-medium has-[:checked]:text-ok">
