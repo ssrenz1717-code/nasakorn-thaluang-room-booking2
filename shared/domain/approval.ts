@@ -5,11 +5,26 @@ import type { UserRole } from '../schemas/user';
  *   1. เจ้าหน้าที่ตรวจสอบห้อง (inspector) → 2. ผู้รับรอง (endorser) → 3. ผู้อนุมัติ (director)
  * ขั้นไหนไม่อนุมัติ คำขอจบที่ "ถูกปฏิเสธ" ทันที / ขั้น 3 อนุมัติ = ยืนยันแล้ว ใช้ห้องได้
  */
+/**
+ * printedName / printedPosition = ชื่อและตำแหน่งที่พิมพ์ไว้ในแบบฟอร์มต้นฉบับ
+ * ใช้พิมพ์ใต้ช่องลงชื่อเมื่อขั้นนั้นยังไม่มีคนลงนามในระบบ (ลงนามแล้วจะใช้ชื่อจากบัญชีที่ลงนามจริง)
+ */
 export const APPROVAL_STEPS = [
-  { step: 1, role: 'inspector', action: 'ตรวจสอบห้อง', signer: 'เจ้าหน้าที่ผู้ตรวจสอบห้อง', waiting: 'รอเจ้าหน้าที่ตรวจห้อง' },
-  { step: 2, role: 'endorser', action: 'รับรอง', signer: 'หัวหน้างาน / ผู้รับรอง', waiting: 'รอผู้รับรอง' },
-  { step: 3, role: 'director', action: 'อนุมัติ', signer: 'ผู้พิจารณาอนุมัติ', waiting: 'รอผู้อนุมัติ' },
-] as const satisfies readonly { step: number; role: UserRole; action: string; signer: string; waiting: string }[];
+  {
+    step: 1, role: 'inspector', action: 'ตรวจสอบห้อง', signer: 'เจ้าหน้าที่ผู้ตรวจสอบห้อง', waiting: 'รอเจ้าหน้าที่ตรวจห้อง',
+    printedName: 'นายวัชรพงศ์ โสภา', printedPosition: 'เจ้าหน้าที่งานศูนย์ดิจิทัลและสื่อสารองค์กร',
+  },
+  {
+    step: 2, role: 'endorser', action: 'รับรอง', signer: 'หัวหน้างาน / ผู้รับรอง', waiting: 'รอผู้รับรอง',
+    printedName: 'นายเอกราช เขียวทอง', printedPosition: 'หัวหน้างานศูนย์ดิจิทัลและสื่อสารองค์กร',
+  },
+  {
+    step: 3, role: 'director', action: 'อนุมัติ', signer: 'ผู้พิจารณาอนุมัติ', waiting: 'รอผู้อนุมัติ',
+    printedName: 'นายชาตรี เริงชัยภูมิ', printedPosition: 'รองผู้อำนวยการฝ่ายพัฒนายุทธศาสตร์และแผนงาน',
+  },
+] as const satisfies readonly {
+  step: number; role: UserRole; action: string; signer: string; waiting: string; printedName: string; printedPosition: string;
+}[];
 
 export type ApprovalStepNumber = (typeof APPROVAL_STEPS)[number]['step'];
 

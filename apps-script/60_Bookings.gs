@@ -26,6 +26,7 @@ function publicBooking_(row) {
     extraFurnitureCount: Number(row.extraFurnitureCount) || 0, otherFacility: String(row.otherFacility || ''),
     termsAccepted: String(row.termsAccepted) === 'true',
     customLocation: String(row.customLocation || ''),
+    createdAt: String(row.createdAt || ''),
     approvalStep: Domain.currentApprovalStep({ status: String(row.status), approvalStep: row.approvalStep }),
     approvalLog: Domain.parseApprovalLog(row.approvalLog),
   };

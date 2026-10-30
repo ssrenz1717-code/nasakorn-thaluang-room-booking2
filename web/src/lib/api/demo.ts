@@ -61,6 +61,8 @@ export interface DemoBooking {
   /** ขั้นที่รออนุมัติ 1–3 (0 = ไม่ได้รอ) */
   approvalStep?: number;
   approvalLog?: ApprovalEntry[];
+  /** เวลาที่ยื่นคำขอ (ISO) — พิมพ์เป็น "เขียนวันที่" ในแบบฟอร์ม */
+  createdAt?: string;
 }
 
 interface DemoState {
@@ -136,7 +138,7 @@ function seedBookings(): DemoBooking[] {
   const tomorrow = addDaysToDateKey(today, 1);
   const later = addDaysToDateKey(today, 2);
   const signedAt = new Date().toISOString();
-  const common = { equipment: [], note: '', termsAccepted: true, extraFurnitureCount: 0, otherFacility: '', customLocation: '' };
+  const common = { equipment: [], note: '', termsAccepted: true, extraFurnitureCount: 0, otherFacility: '', customLocation: '', createdAt: signedAt };
 
   return [
     {
@@ -297,7 +299,7 @@ export function createDemoTransport(): Transport {
       const booking: DemoBooking = {
         ...input, customLocation: openLocation ? input.customLocation : '', bookingId: `demo-bk-${Date.now()}`,
         status: needsApproval ? 'pending' : 'confirmed', approvalStep: needsApproval ? 1 : 0, approvalLog: [],
-        userEmail: user.email, userName: user.displayName,
+        userEmail: user.email, userName: user.displayName, createdAt: new Date().toISOString(),
       };
       state.bookings.push(booking); state.dataVersion += 1; saveState(state);
       return { booking };

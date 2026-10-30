@@ -198,7 +198,7 @@ describe('จองห้องจริงตั้งแต่ต้นจน�
     await waitFor(() =>
       expect(screen.getAllByRole('radio').some((radio) => (radio as HTMLInputElement).checked)).toBe(true),
     );
-    await user.type(await screen.findByLabelText('ชื่อผู้จอง'), 'นายทดสอบ ระบบจอง');
+    await user.type(await screen.findByLabelText('ชื่อผู้จอง'), 'ทดสอบ ระบบจอง');
     await user.type(screen.getByLabelText('ตำแหน่ง'), 'ครู');
     await user.type(screen.getByLabelText('หมายเลขโทรศัพท์'), '081-234-5678');
     await user.type(screen.getByLabelText('เพื่อใช้ในการดำเนินงาน เรื่อง'), 'ประชุมทดสอบระบบ');
@@ -206,7 +206,7 @@ describe('จองห้องจริงตั้งแต่ต้นจน�
     fireEvent.change(screen.getByLabelText('วันที่'), { target: { value: '2030-01-02' } });
     fireEvent.change(screen.getByLabelText('เริ่ม'), { target: { value: '13:00' } });
     fireEvent.change(screen.getByLabelText('สิ้นสุด'), { target: { value: '14:00' } });
-    await user.click(screen.getByLabelText(/ข้าพเจ้าจะดูแลรักษาทรัพย์สิน/));
+    await user.click(screen.getByLabelText(/ดูแลรักษาทรัพย์สินของทางราชการ/));
     await user.click(screen.getByRole('button', { name: /ส่งคำขอจอง/ }));
 
     expect(await screen.findByText('ประชุมทดสอบระบบ', {}, { timeout: 3000 })).toBeDefined();
@@ -372,7 +372,7 @@ describe('ห้องไม่ว่าง: บอกตั้งแต่ต�
     fireEvent.change(screen.getByLabelText('เริ่ม'), { target: { value: '09:00' } });
     const warning = await screen.findByRole('alert', {}, { timeout: 3000 });
     expect(warning.textContent).toContain('ห้องนี้ไม่ว่างเวลา 09:00–10:30 น.');
-    await user.click(screen.getByLabelText(/ข้าพเจ้าจะดูแลรักษาทรัพย์สิน/));
+    await user.click(screen.getByLabelText(/ดูแลรักษาทรัพย์สินของทางราชการ/));
     expect((screen.getByRole('button', { name: /ส่งคำขอจอง/ }) as HTMLButtonElement).disabled).toBe(true);
 
     // เวลาที่ชนเลือกไม่ได้ในรายการ
@@ -441,6 +441,32 @@ describe('ส่วนที่เพิ่มตามเช็กลิสต�
     await user.type(screen.getByLabelText('ค้นหาตามแผนกวิชาหรือชื่อผู้จอง'), 'ไม่มีแผนกนี้แน่นอน');
     expect(exportButton.textContent).toContain('(0 รายการ)');
     expect((exportButton as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('แบบคำขอใช้ห้อง (กรอกผ่านเว็บ พิมพ์เป็นแบบฟอร์มของวิทยาลัย)', () => {
+  it('หน้าแบบฟอร์มเติมข้อมูลจากคำขอ ติ๊กห้องและอุปกรณ์ และใส่ชื่อผู้ลงนามที่ลงนามแล้ว', async () => {
+    window.location.hash = '#/reports?booking=demo-bk-1';
+    renderApp();
+    const sheet = await screen.findByRole('article', { name: 'แบบคำขออนุญาตใช้ห้องประชุม' }, { timeout: 5000 });
+    const text = sheet.textContent ?? '';
+    for (const expected of ['อ.สมชาย ใจดี', 'แผนกวิชาเทคโนโลยีสารสนเทศ', '081-234-5678', 'ประชุมครูและบุคลากรประจำเดือน', '09.00', '10.30', 'นายเอกราช เขียวทอง', 'รองผู้อำนวยการฝ่ายพัฒนายุทธศาสตร์และแผนงาน', 'ลงนามผ่านระบบแล้ว']) {
+      expect(text).toContain(expected);
+    }
+    // ห้องที่เลือก (หอประชุมอดิเรกสาร) ติ๊ก 1 ช่อง + อุปกรณ์ 3 รายการ + พร้อมใช้งาน = 5 ช่อง
+    expect(within(sheet).getAllByRole('img', { name: 'เลือก' })).toHaveLength(5);
+  });
+
+  it('หน้าจองดูตัวอย่างแบบฟอร์มที่กำลังกรอกได้ก่อนส่ง', async () => {
+    const { user, nav } = await openApp();
+    await goTo(user, nav, 'จองห้องประชุม');
+    await user.selectOptions(await screen.findByLabelText('คำนำหน้าชื่อ'), 'นางสาว');
+    await user.type(screen.getByLabelText('ชื่อผู้จอง'), 'ใจดี มีสุข');
+    await user.click(screen.getByRole('button', { name: /ดูตัวอย่างแบบฟอร์ม/ }));
+    const dialog = screen.getByRole('dialog', { name: 'ตัวอย่างแบบคำขอ' });
+    expect(within(dialog).getByRole('article').textContent).toContain('นางสาวใจดี มีสุข');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'ตัวอย่างแบบคำขอ' })).toBeNull();
   });
 });
 

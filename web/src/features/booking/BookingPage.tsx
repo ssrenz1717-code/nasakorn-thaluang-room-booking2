@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AirVent, CalendarDays, Check, Clock3, DoorOpen, MapPin, Mic, Projector, Send, Users, Volume2, Wifi, type LucideIcon,
+  AirVent, CalendarDays, Check, Clock3, DoorOpen, FileText, MapPin, Mic, Projector, Send, Users, Volume2, Wifi, type LucideIcon,
 } from 'lucide-react';
 import { businessWindow } from '@shared/domain/booking-rules';
 import { conflictingSlots, isEndBlocked, isStartBlocked } from '@shared/domain/availability';
@@ -20,6 +20,7 @@ import { useRoomAvailability } from '../../lib/hooks/useRoomAvailability';
 import { cn } from '../../lib/cn';
 import type { DemoRoom } from '../../lib/api/demo';
 import { ROOM_BANDS } from './roomBands';
+import { FormPreviewDialog } from '../requestForm/FormPreviewDialog';
 import { adjustEndTime, asMinute, endTimeOptions, firstFreeStart, startTimeOptions, timeText } from './timeOptions';
 
 const inputClass = 'min-h-11 w-full rounded-control border border-line bg-surface px-3 text-[15px] text-ink outline-none transition-colors duration-150 focus:border-brand focus:ring-2 focus:ring-brand/20';
@@ -35,6 +36,8 @@ const FACILITY_ICON: Record<RequestFacility, LucideIcon> = {
 
 /** ปุ่มลัดความยาวการประชุม — ส่วนใหญ่ประชุมกันครึ่งชั่วโมงถึงสองชั่วโมง */
 const DURATIONS = [30, 60, 90, 120];
+/** คำนำหน้าตามแบบคำขอ "ข้าพเจ้า นาย/นาง/นางสาว" ('' = ไม่ระบุ เช่น ใช้ยศหรือตำแหน่งวิชาการในชื่อเอง) */
+const NAME_PREFIXES = ['นาย', 'นาง', 'นางสาว', ''];
 const durationText = (minutes: number) =>
   minutes < 60 ? `${minutes} นาที` : `${minutes / 60 % 1 === 0 ? minutes / 60 : (minutes / 60).toFixed(1)} ชม.`;
 
@@ -72,7 +75,10 @@ export function BookingPage() {
   const [dateKey, setDateKey] = useState(days[0] ?? today);
   const [start, setStart] = useState('09:00');
   const [end, setEnd] = useState('10:00');
+  const [namePrefix, setNamePrefix] = useState('นาย');
   const [bookerName, setBookerName] = useState('');
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const closePreview = useCallback(() => setPreviewOpen(false), []);
   const [position, setPosition] = useState('');
   const [department, setDepartment] = useState(user.department);
   const [phone, setPhone] = useState('');
@@ -146,13 +152,21 @@ export function BookingPage() {
     terms: termsAccepted,
   };
 
+  // ชื่อเต็มตามแบบฟอร์ม: คำนำหน้าติดชื่อ (เช่น นายสมชาย ใจดี)
+  const fullName = `${namePrefix}${bookerName.trim()}`;
+  const formData = {
+    bookerName: fullName, requesterPosition: position, department, requesterPhone: phone, roomId,
+    customLocation: openLocation ? customLocation : '', title, dateKey, startMin, endMin, attendees: attendeeCount,
+    requestedFacilities, extraFurnitureCount: Number(extraFurnitureCount) || 0, otherFacility,
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
     setError('');
     try {
       await api.createBooking(token, {
-        bookerName, title, roomId, dateKey, startMin, endMin, attendees: attendeeCount,
+        bookerName: fullName, title, roomId, dateKey, startMin, endMin, attendees: attendeeCount,
         department, requesterPosition: position, requesterPhone: phone, note, equipment: [], customLocation: openLocation ? customLocation : '',
         requestedFacilities, extraFurnitureCount: Number(extraFurnitureCount), otherFacility, termsAccepted,
       });
@@ -314,7 +328,13 @@ export function BookingPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className={labelClass} htmlFor="booker-name">ชื่อผู้จอง</label>
-                <input className={inputClass} id="booker-name" required maxLength={100} autoComplete="name" value={bookerName} onChange={(e) => setBookerName(e.target.value)} placeholder="ชื่อ-นามสกุล ผู้จอง" />
+                <div className="flex gap-2">
+                  <label htmlFor="name-prefix" className="sr-only">คำนำหน้าชื่อ</label>
+                  <select id="name-prefix" className={cn(inputClass, 'w-[6.5rem] shrink-0 px-2')} value={namePrefix} onChange={(e) => setNamePrefix(e.target.value)}>
+                    {NAME_PREFIXES.map((prefix) => <option key={prefix || 'none'} value={prefix}>{prefix || 'ไม่ระบุ'}</option>)}
+                  </select>
+                  <input className={inputClass} id="booker-name" required maxLength={90} autoComplete="name" value={bookerName} onChange={(e) => setBookerName(e.target.value)} placeholder="ชื่อ-นามสกุล" />
+                </div>
               </div>
               <div>
                 <label className={labelClass} htmlFor="position">ตำแหน่ง</label>
@@ -376,10 +396,20 @@ export function BookingPage() {
             </div>
             <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-control border border-line p-3.5 text-sm leading-6 text-ink-muted transition-colors duration-150 has-[:checked]:border-ok-border has-[:checked]:bg-ok-soft has-[:checked]:font-medium has-[:checked]:text-ok">
               <input className="mt-1" type="checkbox" required checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} />
-              <span>ข้าพเจ้าจะดูแลรักษาทรัพย์สินของทางราชการ และปฏิบัติตามระเบียบของวิทยาลัยทุกประการ</span>
+              <span>ข้าพเจ้าขอรับรองว่าจะดูแลรักษาทรัพย์สินของทางราชการ และปฏิบัติตามระเบียบของวิทยาลัยโดยเคร่งครัด</span>
             </label>
           </Section>
+
+          <button
+            type="button"
+            onClick={() => setPreviewOpen(true)}
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-card border border-dashed border-brand-border bg-brand-soft/60 px-4 text-[15px] font-medium text-brand transition-colors hover:bg-brand-soft"
+          >
+            <FileText className="size-5" aria-hidden="true" />
+            ดูตัวอย่างแบบฟอร์มคำขอที่จะพิมพ์ออกมา
+          </button>
         </form>
+        {previewOpen && <FormPreviewDialog data={formData} roomCode={room?.code ?? ''} roomName={room?.name} onClose={closePreview} />}
 
         <aside
           aria-label="สรุปการจอง"
