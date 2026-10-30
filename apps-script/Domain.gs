@@ -22,6 +22,8 @@ var Domain = (() => {
   // shared/index.ts
   var index_exports = {};
   __export(index_exports, {
+    ANNOUNCEMENT_TONES: () => ANNOUNCEMENT_TONES,
+    ANNOUNCEMENT_TONE_LABEL_TH: () => ANNOUNCEMENT_TONE_LABEL_TH,
     BANGKOK_TZ: () => BANGKOK_TZ,
     BOOKING_DECISIONS: () => BOOKING_DECISIONS,
     BOOKING_HOT_COLUMNS: () => BOOKING_HOT_COLUMNS,
@@ -39,6 +41,7 @@ var Domain = (() => {
     ROOM_STATUSES: () => ROOM_STATUSES,
     ROOM_STATUS_LABEL_TH: () => ROOM_STATUS_LABEL_TH,
     SETTING_DESCRIPTIONS: () => SETTING_DESCRIPTIONS,
+    SHEET_ANNOUNCEMENTS: () => SHEET_ANNOUNCEMENTS,
     SHEET_AUDIT: () => SHEET_AUDIT,
     SHEET_BOOKINGS: () => SHEET_BOOKINGS,
     SHEET_META: () => SHEET_META,
@@ -52,6 +55,7 @@ var Domain = (() => {
     USER_ROLE_LABEL_TH: () => USER_ROLE_LABEL_TH,
     USER_STATUSES: () => USER_STATUSES,
     USER_STATUS_LABEL_TH: () => USER_STATUS_LABEL_TH,
+    activeAnnouncements: () => activeAnnouncements,
     addDaysToDateKey: () => addDaysToDateKey,
     asRecord: () => asRecord,
     assertTransition: () => assertTransition,
@@ -104,6 +108,7 @@ var Domain = (() => {
     toDateKey: () => toDateKey,
     toMinutesOfDay: () => toMinutesOfDay,
     tzOffsetMinutes: () => tzOffsetMinutes,
+    validateAnnouncementInput: () => validateAnnouncementInput,
     validateAvailabilityInput: () => validateAvailabilityInput,
     validateBookingRequest: () => validateBookingRequest,
     validateBookingRules: () => validateBookingRules,
@@ -444,6 +449,7 @@ var Domain = (() => {
   var SHEET_AUDIT = "AuditLogs";
   var SHEET_SETTINGS = "Settings";
   var SHEET_META = "Meta";
+  var SHEET_ANNOUNCEMENTS = "Announcements";
   var BOOKING_HOT_COLUMNS = 6;
   var SHEET_SPECS = [
     {
@@ -551,6 +557,11 @@ var Domain = (() => {
       name: SHEET_META,
       keyColumn: "key",
       headers: ["key", "value"]
+    },
+    {
+      name: SHEET_ANNOUNCEMENTS,
+      keyColumn: "announcementId",
+      headers: ["announcementId", "title", "body", "tone", "expiresOn", "createdBy", "createdAt", "updatedAt", "archivedAt"]
     }
   ];
   function sheetSpec(name) {
@@ -1314,6 +1325,35 @@ var Domain = (() => {
         patternMessage: "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A YYYY-MM-DD"
       })
     });
+  }
+
+  // shared/schemas/announcement.ts
+  var ANNOUNCEMENT_TONES = ["info", "notice", "urgent"];
+  var ANNOUNCEMENT_TONE_LABEL_TH = {
+    info: "\u0E02\u0E48\u0E32\u0E27\u0E2A\u0E32\u0E23\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B",
+    notice: "\u0E41\u0E08\u0E49\u0E07\u0E43\u0E2B\u0E49\u0E17\u0E23\u0E32\u0E1A",
+    urgent: "\u0E14\u0E48\u0E27\u0E19 / \u0E2B\u0E49\u0E2D\u0E07\u0E1B\u0E34\u0E14\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19"
+  };
+  function validateAnnouncementInput(raw) {
+    var _a;
+    const input = asRecord(raw);
+    const check = new Check();
+    return check.result({
+      announcementId: check.string("announcementId", input.announcementId, { label: "\u0E23\u0E2B\u0E31\u0E2A\u0E1B\u0E23\u0E30\u0E01\u0E32\u0E28", max: 80, fallback: "" }),
+      title: check.string("title", input.title, { label: "\u0E2B\u0E31\u0E27\u0E02\u0E49\u0E2D\u0E1B\u0E23\u0E30\u0E01\u0E32\u0E28", min: 1, max: 120 }),
+      body: check.string("body", input.body, { label: "\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14", max: 1e3, fallback: "" }),
+      tone: check.oneOf("tone", (_a = input.tone) != null ? _a : "info", ANNOUNCEMENT_TONES, { label: "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E1B\u0E23\u0E30\u0E01\u0E32\u0E28" }),
+      expiresOn: check.string("expiresOn", input.expiresOn, {
+        label: "\u0E41\u0E2A\u0E14\u0E07\u0E16\u0E36\u0E07\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48",
+        fallback: "",
+        pattern: /^(|\d{4}-\d{2}-\d{2})$/,
+        patternMessage: "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2B\u0E21\u0E14\u0E2D\u0E32\u0E22\u0E38\u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A YYYY-MM-DD"
+      })
+    });
+  }
+  function activeAnnouncements(items, todayKey) {
+    const rank = { urgent: 0, notice: 1, info: 2 };
+    return items.filter((item) => item.archivedAt === "" && (item.expiresOn === "" || !DATE_KEY_PATTERN.test(item.expiresOn) || item.expiresOn >= todayKey)).sort((a, b) => rank[a.tone] - rank[b.tone] || b.createdAt.localeCompare(a.createdAt));
   }
   return __toCommonJS(index_exports);
 })();

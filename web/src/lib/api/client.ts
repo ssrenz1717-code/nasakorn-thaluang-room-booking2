@@ -6,6 +6,7 @@ import type { BootstrapResult, LoginResult, SessionUser, Transport, VersionResul
 import type { DemoBooking, DemoRoom } from './demo';
 import type { BookingRequest } from '@shared/schemas/booking';
 import type { BusySlot } from '@shared/domain/availability';
+import type { Announcement, AnnouncementInput } from '@shared/schemas/announcement';
 
 /**
  * ส่งสัญญาณทั้งแอปเมื่อรายการจองเปลี่ยน (จอง/ยกเลิก/อนุมัติ/ปฏิเสธ)
@@ -36,6 +37,11 @@ export interface ApiClient {
   createBooking(token: string, input: BookingRequest): Promise<{ booking: DemoBooking }>;
   cancelBooking(token: string, bookingId: string, reason?: string): Promise<{ booking: DemoBooking }>;
   decideBooking(token: string, bookingId: string, decision: 'approve'|'reject', reason?: string): Promise<{ booking: DemoBooking }>;
+  /** ประกาศที่ยังแสดงอยู่ (ทุกคนอ่านได้) */
+  announcements(token: string): Promise<{ announcements: Announcement[] }>;
+  /** เพิ่ม (announcementId = '') หรือแก้ประกาศ — เฉพาะผู้ดูแล */
+  saveAnnouncement(token: string, input: AnnouncementInput): Promise<{ announcement: Announcement }>;
+  archiveAnnouncement(token: string, announcementId: string): Promise<{ ok: boolean }>;
 }
 
 function wrap(transport: Transport): ApiClient {
@@ -53,6 +59,9 @@ function wrap(transport: Transport): ApiClient {
     createBooking: (token, input) => announceBookingsChanged(transport.call('createBooking', input, token)),
     cancelBooking: (token, bookingId, reason = '') => announceBookingsChanged(transport.call('cancelBooking', { bookingId, reason }, token)),
     decideBooking: (token, bookingId, decision, reason = '') => announceBookingsChanged(transport.call('decideBooking', { bookingId, decision, reason }, token)),
+    announcements: (token) => transport.call('announcements', {}, token),
+    saveAnnouncement: (token, input) => transport.call('saveAnnouncement', input, token),
+    archiveAnnouncement: (token, announcementId) => transport.call('archiveAnnouncement', { announcementId }, token),
   };
 }
 

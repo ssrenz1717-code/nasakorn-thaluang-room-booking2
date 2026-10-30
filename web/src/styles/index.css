@@ -184,6 +184,11 @@
     background-image: repeating-linear-gradient(135deg, var(--color-warn-border) 0 5px, var(--color-warn-soft) 5px 10px);
   }
 
+  /* แท่งแนวนอนยืดจาก 0 ไปค่าจริง (ค่าจริงอยู่ใน style transform ของแท่ง) */
+  .grow-x {
+    animation: grow-x 700ms var(--ease-out) backwards;
+  }
+
   /* เนื้อหาโผล่ขึ้นทีละชิ้นตอนเปิดหน้า (ปิดเองเมื่อผู้ใช้ตั้งเครื่องให้ลดการเคลื่อนไหว) */
   /* backwards ไม่ใช่ both: เล่นจบแล้วต้องปล่อย transform คืน ไม่งั้นค่าสุดท้ายของแอนิเมชัน
      ค้างทับการยกขึ้นตอนชี้ (.lift) ทำให้การ์ดไม่ขยับ */
@@ -239,6 +244,10 @@
 }
 
 /* เข้าแบบจาง ๆ ใช้กับเนื้อหาที่โหลดเสร็จแล้วค่อยโผล่ */
+@keyframes grow-x {
+  from { transform: scaleX(0); }
+}
+
 @keyframes rise {
   from {
     opacity: 0;

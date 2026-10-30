@@ -5,6 +5,7 @@ import { DESKTOP_QUERY, useMediaQuery } from '../../lib/hooks/useMediaQuery';
 import { cn } from '../../lib/cn';
 import { layoutLanes } from './laneLayout';
 import { timeText } from './timeOptions';
+import { roomColorOf } from './roomBands';
 
 const DAY_START = 8 * 60;
 const DAY_END = 18 * 60;
@@ -173,16 +174,19 @@ export function WeekTimeGrid({
                   const height = Math.max(((clippedEnd - clippedStart) / 60) * hourHeight - 4, 26);
                   const place = lanes.get(booking.bookingId) ?? { lane: 0, lanes: 1 };
                   const roomName = rooms.find((room) => room.roomId === booking.roomId)?.name;
+                  const color = roomColorOf(rooms.map((room) => room.roomId), booking.roomId);
                   return (
                     <button
                       key={booking.bookingId}
                       onClick={(event) => { event.stopPropagation(); onDay(key); }}
-                      title={`${timeText(booking.startMin)}–${timeText(booking.endMin)} · ${booking.bookerName || booking.userName}${roomName ? ` · ${roomName}` : ''}`}
+                      title={`${timeText(booking.startMin)}–${timeText(booking.endMin)} · ${booking.bookerName || booking.userName}${roomName ? ` · ${roomName}` : ''}${booking.status === 'pending' ? ' (รออนุมัติ)' : ''}`}
                       className={cn(
                         'absolute z-10 overflow-hidden rounded-md py-1 text-left text-[11px] leading-tight shadow-sm ring-1 ring-inset focus-visible:outline-2 focus-visible:outline-brand sm:text-xs',
                         // แบ่งช่องกับรายการอื่นแล้วแคบลง ลดขอบในให้ยังเห็นเวลาเริ่มเต็ม ๆ
                         place.lanes > 1 ? 'px-1' : 'px-1.5 sm:px-2',
-                        booking.status === 'pending' ? 'bg-warn-soft text-warn ring-warn-border' : 'bg-brand-soft text-brand ring-brand-border',
+                        // สีประจำห้อง (ดูซ้อนกันได้ว่าห้องไหน) — รออนุมัติใช้กรอบเส้นประแทนสี
+                        color.soft, color.text,
+                        booking.status === 'pending' ? 'border border-dashed border-current ring-0' : color.ring,
                       )}
                       style={{
                         top: `${toY(clippedStart) + 2}px`,

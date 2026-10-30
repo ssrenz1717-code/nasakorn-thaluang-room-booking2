@@ -36,6 +36,7 @@ export const SHEET_NOTIFICATIONS = 'Notifications';
 export const SHEET_AUDIT = 'AuditLogs';
 export const SHEET_SETTINGS = 'Settings';
 export const SHEET_META = 'Meta';
+export const SHEET_ANNOUNCEMENTS = 'Announcements';
 
 /**
  * คอลัมน์ของ Bookings เรียงให้ 6 คอลัมน์แรกเป็นคอลัมน์ที่ใช้ตรวจเวลาทับซ้อน
@@ -152,6 +153,11 @@ export const SHEET_SPECS: SheetSpec[] = [
     name: SHEET_META,
     keyColumn: 'key',
     headers: ['key', 'value'],
+  },
+  {
+    name: SHEET_ANNOUNCEMENTS,
+    keyColumn: 'announcementId',
+    headers: ['announcementId', 'title', 'body', 'tone', 'expiresOn', 'createdBy', 'createdAt', 'updatedAt', 'archivedAt'],
   },
 ];
 

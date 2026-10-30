@@ -18,6 +18,7 @@ import { findConflicts } from '@shared/domain/overlap';
 import { readLocal, writeLocal } from '../storage';
 import { busySlotsFor } from '@shared/domain/availability';
 import { ApiError, type SessionUser, type Transport, type VersionResult } from './types';
+import { activeAnnouncements, validateAnnouncementInput, type Announcement } from '@shared/schemas/announcement';
 
 export interface DemoRoom {
   roomId: string;
@@ -60,13 +61,14 @@ interface DemoState {
   users: SessionUser[];
   rooms: DemoRoom[];
   bookings: DemoBooking[];
+  announcements: Announcement[];
   dataVersion: number;
 }
 
 const DEMO_ADMIN: SessionUser = {
   email: 'admin@example.com',
   displayName: 'ผู้ดูแลระบบ',
-  department: 'ฝ่ายไอที',
+  department: 'แผนกวิชาเทคโนโลยีสารสนเทศ',
   role: 'admin',
   status: 'active',
 };
@@ -74,7 +76,7 @@ const DEMO_ADMIN: SessionUser = {
 const DEMO_STAFF: SessionUser = {
   email: 'staff@example.com',
   displayName: 'เจ้าหน้าที่',
-  department: 'ฝ่ายขาย',
+  department: 'แผนกวิชาการบัญชี',
   role: 'staff',
   status: 'active',
 };
@@ -139,6 +141,17 @@ function seedRooms(): DemoRoom[] {
   ];
 }
 
+function seedAnnouncements(): Announcement[] {
+  const now = new Date().toISOString();
+  return [
+    {
+      announcementId: 'demo-an-1', tone: 'notice', expiresOn: '', createdBy: 'admin@example.com', createdAt: now, updatedAt: now, archivedAt: '',
+      title: 'ขอความร่วมมือคืนห้องตรงเวลา',
+      body: 'ประชุมเสร็จแล้วกรุณาปิดแอร์ ปิดเครื่องฉายภาพ และแจ้งงานศูนย์ดิจิทัลฯ หากอุปกรณ์ชำรุด',
+    },
+  ];
+}
+
 function seedBookings(): DemoBooking[] {
   const today = toDateKey(new Date());
   const tomorrow = addDaysToDateKey(today, 1);
@@ -155,7 +168,7 @@ function seedBookings(): DemoBooking[] {
       userEmail: 'admin@example.com',
       userName: 'ผู้ดูแลระบบ',
       bookerName: 'อ.สมชาย ใจดี',
-      department: 'ฝ่ายไอที',
+      department: 'แผนกวิชาเทคโนโลยีสารสนเทศ',
       attendees: 12,
       equipment: ['projector', 'videoConference'],
       note: 'เตรียมสไลด์สรุปยอดเดือนที่ผ่านมา',
@@ -171,7 +184,7 @@ function seedBookings(): DemoBooking[] {
       userEmail: 'staff@example.com',
       userName: 'เจ้าหน้าที่',
       bookerName: 'นางสาวกนกวรรณ ศรีสุข',
-      department: 'ฝ่ายขาย',
+      department: 'แผนกวิชาการบัญชี',
       attendees: 5,
       equipment: ['tv'],
       note: '',
@@ -187,7 +200,7 @@ function seedBookings(): DemoBooking[] {
       userEmail: 'hr@example.com',
       userName: 'งานบุคลากร',
       bookerName: 'นายประเสริฐ มั่นคง',
-      department: 'ฝ่ายบุคคล',
+      department: 'แผนกวิชาช่างไฟฟ้ากำลัง',
       attendees: 28,
       equipment: ['projector', 'speakerPhone'],
       note: '',
@@ -203,7 +216,7 @@ function seedBookings(): DemoBooking[] {
       userEmail: 'hr@example.com',
       userName: 'งานบุคลากร',
       bookerName: 'อ.วิภาวรรณ แก้วมณี',
-      department: 'ฝ่ายบุคคล',
+      department: 'แผนกวิชาช่างไฟฟ้ากำลัง',
       attendees: 3,
       equipment: [],
       note: '',
@@ -219,7 +232,7 @@ function seedBookings(): DemoBooking[] {
       userEmail: 'staff@example.com',
       userName: 'เจ้าหน้าที่',
       bookerName: 'นายธนพล รุ่งเรือง',
-      department: 'ฝ่ายขาย',
+      department: 'แผนกวิชาการบัญชี',
       attendees: 8,
       equipment: ['projector'],
       note: 'ลูกค้าขอเลื่อน',
@@ -235,7 +248,7 @@ function seedBookings(): DemoBooking[] {
       userEmail: 'staff@example.com',
       userName: 'เจ้าหน้าที่',
       bookerName: 'นางสุดารัตน์ บุญมา',
-      department: 'ฝ่ายขาย',
+      department: 'แผนกวิชาการบัญชี',
       attendees: 6,
       equipment: ['tv'],
       note: 'ขออนุมัติการใช้ห้องประชุม',
@@ -263,8 +276,9 @@ function loadState(): DemoState {
   const saved = readLocal(LOCAL_STORAGE_KEY);
   if (saved === null) return state;
   try {
-    const parsed = JSON.parse(saved) as { bookings?: unknown; dataVersion?: unknown };
+    const parsed = JSON.parse(saved) as { bookings?: unknown; announcements?: unknown; dataVersion?: unknown };
     if (Array.isArray(parsed.bookings)) state.bookings = parsed.bookings as DemoBooking[];
+    if (Array.isArray(parsed.announcements)) state.announcements = parsed.announcements as Announcement[];
     if (typeof parsed.dataVersion === 'number') state.dataVersion = parsed.dataVersion;
   } catch {
     // ข้อมูลที่เก็บไว้เสีย ใช้ข้อมูลตั้งต้นแทน ดีกว่าเปิดเว็บไม่ขึ้น
@@ -275,7 +289,7 @@ function loadState(): DemoState {
 function saveState(state: DemoState): void {
   writeLocal(
     LOCAL_STORAGE_KEY,
-    JSON.stringify({ bookings: state.bookings, dataVersion: state.dataVersion }),
+    JSON.stringify({ bookings: state.bookings, announcements: state.announcements, dataVersion: state.dataVersion }),
   );
 }
 
@@ -285,6 +299,7 @@ function createState(): DemoState {
     users: [DEMO_ADMIN, DEMO_STAFF],
     rooms: seedRooms(),
     bookings: seedBookings(),
+    announcements: seedAnnouncements(),
     dataVersion: 1,
   };
 }
@@ -371,6 +386,39 @@ export function createDemoTransport(): Transport {
       if (payload.reason?.trim()) booking.note = `${booking.note}${booking.note ? '\n' : ''}ผลพิจารณา: ${payload.reason.trim()}`;
       state.dataVersion += 1; saveState(state);
       return { booking };
+    },
+    announcements: (_payload, token) => {
+      userFromToken(token);
+      return { announcements: activeAnnouncements(state.announcements, toDateKey(new Date())) };
+    },
+    saveAnnouncement: (payload: unknown, token) => {
+      const user = userFromToken(token);
+      if (user.role !== 'admin') throw new ApiError('FORBIDDEN', 'เฉพาะผู้ดูแลระบบจึงจะจัดการประกาศได้');
+      const parsed = validateAnnouncementInput(payload);
+      if (!parsed.ok) throw new ApiError('VALIDATION', parsed.issues.map((issue) => issue.message).join(' · '), parsed.issues);
+      const input = parsed.value;
+      const now = new Date().toISOString();
+      let announcement: Announcement;
+      if (input.announcementId === '') {
+        announcement = { ...input, announcementId: `demo-an-${Date.now()}`, createdBy: user.email, createdAt: now, updatedAt: now, archivedAt: '' };
+        state.announcements.push(announcement);
+      } else {
+        const found = state.announcements.find((item) => item.announcementId === input.announcementId && item.archivedAt === '');
+        if (!found) throw new ApiError('NOT_FOUND', 'ไม่พบประกาศ');
+        Object.assign(found, { title: input.title, body: input.body, tone: input.tone, expiresOn: input.expiresOn, updatedAt: now });
+        announcement = found;
+      }
+      state.dataVersion += 1; saveState(state);
+      return { announcement };
+    },
+    archiveAnnouncement: (payload: { announcementId?: string }, token) => {
+      const user = userFromToken(token);
+      if (user.role !== 'admin') throw new ApiError('FORBIDDEN', 'เฉพาะผู้ดูแลระบบจึงจะจัดการประกาศได้');
+      const found = state.announcements.find((item) => item.announcementId === payload.announcementId && item.archivedAt === '');
+      if (!found) throw new ApiError('NOT_FOUND', 'ไม่พบประกาศ');
+      found.archivedAt = new Date().toISOString();
+      state.dataVersion += 1; saveState(state);
+      return { ok: true };
     },
   };
 

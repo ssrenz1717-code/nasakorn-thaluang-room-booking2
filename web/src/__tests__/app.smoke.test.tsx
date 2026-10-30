@@ -85,11 +85,11 @@ describe('หน้าภาพรวม', () => {
   it('ตัวเลขบนการ์ดสรุปนับขึ้นไปจนถึงค่าจริง', async () => {
     await openApp();
 
-    // ข้อมูลตั้งต้นมีการจองทั้งหมด 6 รายการ — ตัวเลขที่มองเห็น (aria-hidden) ต้องหยุดที่ 6
-    const label = await screen.findByText('รวมทั้งหมด');
+    // ข้อมูลตั้งต้นมีรายการที่อนุมัติแล้ว 4 รายการ ผู้เข้าร่วม 12+5+28+3 = 48 คน — ตัวเลขที่มองเห็น (aria-hidden) ต้องหยุดที่ 48
+    const label = await screen.findByText('ผู้เข้าใช้รวม');
     const card = label.parentElement!;
     await waitFor(
-      () => expect(card.querySelector('strong [aria-hidden="true"]')?.textContent).toBe('6'),
+      () => expect(card.querySelector('strong [aria-hidden="true"]')?.textContent).toBe('48'),
       { timeout: 3000 },
     );
   });
@@ -386,6 +386,39 @@ describe('การตั้งค่าเชื่อมต่อระบบ'
     await user.click(screen.getByRole('button', { name: 'การตั้งค่าเชื่อมต่อระบบ' }));
     const again = screen.getByRole('dialog', { name: /การตั้งค่าเชื่อมต่อระบบ/ });
     expect((within(again).getByLabelText(/Web App URL/) as HTMLInputElement).value).toBe('https://script.google.com/macros/s/AKfycbx123456789abc/exec');
+  });
+});
+
+describe('ส่วนที่เพิ่มตามเช็กลิสต์', () => {
+  it('หน้าภาพรวมมีการ์ดผู้เข้าใช้รวม กราฟแผนกวิชา และประกาศ ผู้ดูแลเพิ่มประกาศได้', async () => {
+    const { user } = await openApp();
+    expect(await screen.findByText('ผู้เข้าใช้รวม')).toBeDefined();
+    expect(await screen.findByText('แผนกวิชาที่ขอใช้บริการมากที่สุด')).toBeDefined();
+    expect(await screen.findByText('ขอความร่วมมือคืนห้องตรงเวลา', {}, { timeout: 3000 })).toBeDefined();
+
+    await user.click(screen.getByRole('button', { name: 'เพิ่มประกาศ' }));
+    await user.type(screen.getByLabelText('หัวข้อประกาศ'), 'ห้องอบรมปิดปรับปรุงแอร์');
+    await user.click(screen.getByText('ด่วน / ห้องปิดใช้งาน'));
+    await user.click(screen.getByRole('button', { name: 'เผยแพร่ประกาศ' }));
+    expect(await screen.findByText('ห้องอบรมปิดปรับปรุงแอร์', {}, { timeout: 3000 })).toBeDefined();
+  });
+
+  it('ปฏิทินกรองตามห้องและค้นหาแผนกได้ จำนวนที่จะดาวน์โหลดเปลี่ยนตาม', async () => {
+    const { user, nav } = await openApp();
+    await goTo(user, nav, 'ปฏิทินการจอง');
+    const exportButton = await screen.findByRole('button', { name: /ดาวน์โหลด Excel/ });
+    await waitFor(() => expect(exportButton.textContent).not.toContain('(0 รายการ)'));
+    const total = Number(/\((\d+) รายการ\)/.exec(exportButton.textContent ?? '')?.[1]);
+
+    await user.click(screen.getByRole('button', { name: 'ห้องประชุมย่อย 1' }));
+    const byRoom = Number(/\((\d+) รายการ\)/.exec(exportButton.textContent ?? '')?.[1]);
+    expect(byRoom).toBeGreaterThan(0);
+    expect(byRoom).toBeLessThan(total);
+
+    await user.click(screen.getByRole('button', { name: 'ทุกห้อง' }));
+    await user.type(screen.getByLabelText('ค้นหาตามแผนกวิชาหรือชื่อผู้จอง'), 'ไม่มีแผนกนี้แน่นอน');
+    expect(exportButton.textContent).toContain('(0 รายการ)');
+    expect((exportButton as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

@@ -14,3 +14,4 @@ export * from './schemas/settings';
 export * from './schemas/room';
 export * from './schemas/user';
 export * from './schemas/booking';
+export * from './schemas/announcement';

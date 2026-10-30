@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ChevronDown,
   CalendarPlus,
   CalendarClock,
   CheckCircle2,
-  ClipboardList,
   Clock,
   PlugZap,
   ShieldCheck,
@@ -26,6 +25,9 @@ import { useAnimatedNumber } from '../../lib/hooks/useAnimatedNumber';
 import { DESKTOP_QUERY, useMediaQuery } from '../../lib/hooks/useMediaQuery';
 import { formatClockWithSeconds, formatDuration, formatFullDate, formatShortDate } from '../../lib/format/thai';
 import type { DemoBooking, DemoRoom } from '../../lib/api/demo';
+import { BOOKINGS_CHANGED_EVENT } from '../../lib/api/client';
+import { AnnouncementsPanel } from './AnnouncementsPanel';
+import { DepartmentRanking } from './DepartmentRanking';
 
 const WEEKDAY_LABELS = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
 
@@ -39,7 +41,17 @@ export function DashboardPage() {
     { status: 'idle' } | { status: 'busy' } | { status: 'done'; at: Date } | { status: 'failed'; message: string }
   >({ status: 'idle' });
   const [bookings,setBookings]=useState<DemoBooking[]>([]); const [rooms,setRooms]=useState<DemoRoom[]>([]);
-  useEffect(()=>{Promise.all([api.bookings(token),api.rooms(token)]).then(([bookingResult,roomResult])=>{setBookings(bookingResult.bookings);setRooms(roomResult.rooms);}).catch(()=>undefined);},[api,token]);
+  // ตัวเลขบนหน้านี้อัปเดตเอง: ทันทีที่มีการจอง/อนุมัติ/ยกเลิก, เมื่อกลับมาที่แท็บนี้ และทุก 30 วินาที (รับการเปลี่ยนจากคนอื่น)
+  const [refreshKey,setRefreshKey]=useState(0);
+  const refresh=useCallback(()=>{Promise.all([api.bookings(token),api.rooms(token)]).then(([bookingResult,roomResult])=>{setBookings(bookingResult.bookings);setRooms(roomResult.rooms);}).catch(()=>undefined);setRefreshKey((key)=>key+1);},[api,token]);
+  useEffect(()=>{
+    refresh();
+    const onVisible=()=>{if(document.visibilityState==='visible')refresh();};
+    const timer=window.setInterval(()=>{if(document.visibilityState==='visible')refresh();},30_000);
+    window.addEventListener(BOOKINGS_CHANGED_EVENT,refresh);
+    document.addEventListener('visibilitychange',onVisible);
+    return ()=>{window.clearInterval(timer);window.removeEventListener(BOOKINGS_CHANGED_EVENT,refresh);document.removeEventListener('visibilitychange',onVisible);};
+  },[refresh]);
 
   const today = toDateKey(new Date());
 
@@ -70,6 +82,8 @@ export function DashboardPage() {
 
   const pendingCount=bookings.filter((booking)=>booking.status==='pending').length;
   const approvedCount=bookings.filter((booking)=>booking.status==='confirmed'||booking.status==='completed').length;
+  const usedBookings=bookings.filter((booking)=>booking.status==='confirmed'||booking.status==='completed');
+  const attendeeTotal=usedBookings.reduce((sum,booking)=>sum+(Number(booking.attendees)||0),0);
   const todayCount=bookings.filter((booking)=>booking.dateKey===today&&['pending','confirmed','completed'].includes(booking.status)).length;
   const roomStats=rooms.map((room)=>({room,count:bookings.filter((booking)=>booking.roomId===room.roomId&&['confirmed','completed'].includes(booking.status)).length})).sort((a,b)=>b.count-a.count);
   const facilityStats:{key:string;label:string;count:number}[]=[...REQUEST_FACILITIES.map((key)=>({key,label:REQUEST_FACILITY_LABEL_TH[key],count:bookings.filter((booking)=>booking.requestedFacilities?.includes(key)).length})),{key:'extra',label:'โต๊ะ/เก้าอี้เพิ่มเติม',count:bookings.filter((booking)=>(booking.extraFurnitureCount||0)>0).length},{key:'other',label:'อุปกรณ์อื่น ๆ',count:bookings.filter((booking)=>Boolean(booking.otherFacility?.trim())).length}].sort((a,b)=>b.count-a.count);
@@ -129,16 +143,19 @@ export function DashboardPage() {
         </Alert>
       )}
 
+      <AnnouncementsPanel refreshKey={refreshKey} />
+
       <section aria-label="สรุปการจอง" className="enter-stagger mb-4 grid grid-cols-2 gap-3 sm:mb-5 sm:gap-4 xl:grid-cols-4">
         <SummaryCard icon={<CalendarClock className="size-5"/>} label="ใช้ห้องวันนี้" value={todayCount} caption="รายการ" tone="blue"/>
         <SummaryCard icon={<Clock className="size-5"/>} label="รออนุมัติ" value={pendingCount} caption="รายการ" tone="orange" link="/approvals"/>
         <SummaryCard icon={<CheckCircle2 className="size-5"/>} label="อนุมัติแล้ว" value={approvedCount} caption="รายการ" tone="green"/>
-        <SummaryCard icon={<ClipboardList className="size-5"/>} label="รวมทั้งหมด" value={bookings.length} caption="รายการ" tone="purple"/>
+        <SummaryCard icon={<Users className="size-5"/>} label="ผู้เข้าใช้รวม" value={attendeeTotal} caption={`คน จาก ${usedBookings.length} รายการ`} tone="purple"/>
       </section>
 
       <section className="enter-stagger mb-5 grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2">
         <Card><CardHeader title="สถิติการใช้ห้องประชุมแต่ละห้อง" description="จำนวนรายการที่ยืนยันแล้ว"/><CardBody><div className="group/bars flex h-40 items-end gap-3 overflow-x-auto border-b border-line px-2 pt-6 sm:h-52">{roomStats.map(({room,count},index)=><RoomBar key={room.roomId} name={room.name} count={count} percent={Math.max(5,count/(roomStats[0]?.count||1)*65)} color={donutColors[index%donutColors.length]!} index={index}/>)}{!roomStats.length&&<p className="m-auto text-sm text-ink-muted">ยังไม่มีข้อมูลห้องประชุม</p>}</div></CardBody></Card>
         <Card><CardHeader title="สถิติการขอใช้อุปกรณ์/สิ่งอำนวยความสะดวก" description="จากคำขอจองทั้งหมด"/><CardBody><div className="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-4 sm:grid-cols-[190px_minmax(0,1fr)] sm:gap-5"><div className="relative mx-auto grid size-32 place-items-center sm:size-44"><FacilityDonut items={facilityStats} colors={donutColors} total={facilityTotal} sweep={sweep} active={activeFacility} onActive={setActiveFacility}/><div className="relative grid size-20 place-items-center rounded-full bg-surface text-center sm:size-28"><div><strong data-numeric className="block text-xl text-ink sm:text-2xl"><CountUp value={facilityTotal} duration={1100}/></strong><span className="block text-[11px] leading-tight text-ink-muted sm:text-xs">รายการ<br className="sm:hidden"/>อุปกรณ์</span></div></div></div><ul className="space-y-2">{facilityStats.map((item,index)=><li key={item.key} onMouseEnter={()=>setActiveFacility(item.key)} onMouseLeave={()=>setActiveFacility(null)} className={`${item.count===0?'hidden sm:flex':'flex'} -mx-2 items-center justify-between gap-3 rounded-lg px-2 py-0.5 text-sm transition-colors duration-150 ${activeFacility===item.key?'bg-neutral-soft font-semibold':''}`}><span className="flex min-w-0 items-center gap-2"><i className={`size-3 shrink-0 rounded-sm transition-transform duration-150 ${activeFacility===item.key?'scale-125':''}`} style={{backgroundColor:donutColors[index%donutColors.length]}}/><span className="truncate">{item.label}</span></span><strong data-numeric><CountUp value={item.count} duration={1100}/></strong></li>)}</ul></div></CardBody></Card>
+        <DepartmentRanking bookings={bookings} />
       </section>
 
       <Card className="mb-5"><CardHeader title="รายการจองล่าสุด" description="รายการใหม่และรายการที่กำลังจะมาถึง" action={<Link className="inline-flex min-h-11 items-center text-sm font-medium text-brand hover:underline" to="/my-bookings">ดูทั้งหมด</Link>}/>
