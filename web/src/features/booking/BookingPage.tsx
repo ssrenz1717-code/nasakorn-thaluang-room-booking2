@@ -340,10 +340,11 @@ export function BookingPage() {
                 <label className={labelClass} htmlFor="booker-name">ชื่อผู้จอง</label>
                 <div className="flex gap-2">
                   <label htmlFor="name-prefix" className="sr-only">คำนำหน้าชื่อ</label>
-                  <select id="name-prefix" className={cn(inputClass, 'w-[6.5rem] shrink-0 px-2')} value={namePrefix} onChange={(e) => setNamePrefix(e.target.value)}>
+                  {/* max-w ไม่ใช่ w: inputClass มี w-full อยู่แล้ว และ cn ไม่ได้ตัด class ที่ชนกันทิ้ง */}
+                  <select id="name-prefix" className={cn(inputClass, 'max-w-[6.5rem] shrink-0 px-2')} value={namePrefix} onChange={(e) => setNamePrefix(e.target.value)}>
                     {NAME_PREFIXES.map((prefix) => <option key={prefix || 'none'} value={prefix}>{prefix || 'ไม่ระบุ'}</option>)}
                   </select>
-                  <input className={inputClass} id="booker-name" required maxLength={90} autoComplete="name" value={bookerName} onChange={(e) => setBookerName(e.target.value)} placeholder="ชื่อ-นามสกุล" />
+                  <input className={cn(inputClass, 'min-w-0 flex-1')} id="booker-name" required maxLength={90} autoComplete="name" value={bookerName} onChange={(e) => setBookerName(e.target.value)} placeholder="ชื่อ-นามสกุล" />
                 </div>
               </div>
               <div>
