@@ -19,6 +19,9 @@ import { readLocal, writeLocal } from '../storage';
 import { busySlotsFor } from '@shared/domain/availability';
 import { ApiError, type SessionUser, type Transport, type VersionResult } from './types';
 import { activeAnnouncements, validateAnnouncementInput, type Announcement } from '@shared/schemas/announcement';
+import { canSeeAllBookings, decideApprovalStep, type ApprovalEntry } from '@shared/domain/approval';
+import { COLLEGE_ROOMS, OPEN_LOCATION_ROOM_CODE, isOpenLocationRoom } from '@shared/schemas/room';
+import { validateDecideBookingInput } from '@shared/schemas/booking';
 
 export interface DemoRoom {
   roomId: string;
@@ -54,6 +57,10 @@ export interface DemoBooking {
   extraFurnitureCount?: number;
   otherFacility?: string;
   termsAccepted?: boolean;
+  customLocation?: string;
+  /** ขั้นที่รออนุมัติ 1–3 (0 = ไม่ได้รอ) */
+  approvalStep?: number;
+  approvalLog?: ApprovalEntry[];
 }
 
 interface DemoState {
@@ -81,64 +88,29 @@ const DEMO_STAFF: SessionUser = {
   status: 'active',
 };
 
+/** ผู้ลงนามอนุมัติ 3 ขั้นตามแบบคำขอ (ในระบบจริงผู้ดูแลกำหนด role ให้แต่ละบัญชีในชีต Users) */
+const DEMO_APPROVERS: SessionUser[] = [
+  { email: 'watcharapong@example.com', displayName: 'นายวัชรพงศ์ โสภา', department: '', role: 'inspector', status: 'active' },
+  { email: 'ekkarat@example.com', displayName: 'นายเอกราช เขียวทอง', department: '', role: 'endorser', status: 'active' },
+  { email: 'chatree@example.com', displayName: 'นายชาตรี เริงชัยภูมิ', department: '', role: 'director', status: 'active' },
+];
+
+/** บัญชีที่สลับไปใช้ได้ในโหมดข้อมูลในเบราว์เซอร์ — ไว้ลองขั้นตอนอนุมัติทีละคน */
+export const DEMO_ACCOUNTS: readonly SessionUser[] = [DEMO_ADMIN, DEMO_STAFF, ...DEMO_APPROVERS];
+
 function seedRooms(): DemoRoom[] {
-  return [
-    {
-      roomId: 'demo-room-1',
-      code: 'MR-01',
-      name: 'ห้องประชุมใหญ่ ชั้น 3',
-      description: 'ห้องประชุมหลัก เหมาะกับการประชุมผู้บริหารและนำเสนอลูกค้า',
-      location: 'อาคาร A ชั้น 3',
-      capacity: 20,
-      equipment: ['projector', 'whiteboard', 'videoConference', 'speakerPhone'],
-      imageUrl: null,
-      status: 'active',
-    },
-    {
-      roomId: 'demo-room-2',
-      code: 'MR-02',
-      name: 'ห้องประชุมย่อย 1',
-      description: 'ห้องเล็กสำหรับคุยงานเป็นทีม',
-      location: 'อาคาร A ชั้น 2',
-      capacity: 8,
-      equipment: ['tv', 'whiteboard', 'hdmi'],
-      imageUrl: null,
-      status: 'active',
-    },
-    {
-      roomId: 'demo-room-3',
-      code: 'MR-03',
-      name: 'ห้องประชุมย่อย 2',
-      description: 'ห้องเล็ก มีจอทีวีสำหรับแชร์หน้าจอ',
-      location: 'อาคาร A ชั้น 2',
-      capacity: 6,
-      equipment: ['tv', 'hdmi'],
-      imageUrl: null,
-      status: 'active',
-    },
-    {
-      roomId: 'demo-room-4',
-      code: 'MR-04',
-      name: 'ห้องอบรม',
-      description: 'จัดโต๊ะแบบห้องเรียน ใช้อบรมพนักงานใหม่',
-      location: 'อาคาร B ชั้น 1',
-      capacity: 40,
-      equipment: ['projector', 'whiteboard', 'speakerPhone'],
-      imageUrl: null,
-      status: 'active',
-    },
-    {
-      roomId: 'demo-room-5',
-      code: 'MR-05',
-      name: 'ห้องประชุมเล็ก ชั้น 4',
-      description: 'ปิดปรับปรุงระบบปรับอากาศ',
-      location: 'อาคาร A ชั้น 4',
-      capacity: 4,
-      equipment: ['tv'],
-      imageUrl: null,
-      status: 'maintenance',
-    },
-  ];
+  // ห้องจริงของวิทยาลัย (รายชื่อเดียวกับที่ Apps Script ใช้สร้างชีต Rooms)
+  return COLLEGE_ROOMS.map((room, index) => ({
+    roomId: room.code === OPEN_LOCATION_ROOM_CODE ? 'demo-room-other' : `demo-room-${index + 1}`,
+    code: room.code,
+    name: room.name,
+    description: room.code === OPEN_LOCATION_ROOM_CODE ? 'ใช้เมื่อต้องการสถานที่อื่นนอกเหนือจากรายการ — ระบุสถานที่ในแบบฟอร์ม' : '',
+    location: '',
+    capacity: room.capacity,
+    equipment: [],
+    imageUrl: null,
+    status: 'active',
+  }));
 }
 
 function seedAnnouncements(): Announcement[] {
@@ -152,112 +124,67 @@ function seedAnnouncements(): Announcement[] {
   ];
 }
 
+/** ประวัติการลงนามของรายการที่ผ่านครบ 3 ขั้นแล้ว (หรือผ่านถึงขั้นที่กำหนด) */
+function signedLog(steps: number, at: string): ApprovalEntry[] {
+  return DEMO_APPROVERS.slice(0, steps).map((user, index) => ({
+    step: index + 1, decision: 'approve', email: user.email, name: user.displayName, at, reason: '',
+  }));
+}
+
 function seedBookings(): DemoBooking[] {
   const today = toDateKey(new Date());
   const tomorrow = addDaysToDateKey(today, 1);
+  const later = addDaysToDateKey(today, 2);
+  const signedAt = new Date().toISOString();
+  const common = { equipment: [], note: '', termsAccepted: true, extraFurnitureCount: 0, otherFacility: '', customLocation: '' };
 
   return [
     {
-      bookingId: 'demo-bk-1',
-      roomId: 'demo-room-1',
-      dateKey: today,
-      startMin: 9 * 60,
-      endMin: 10 * 60 + 30,
-      status: 'confirmed',
-      title: 'ประชุมผู้บริหารประจำสัปดาห์',
-      userEmail: 'admin@example.com',
-      userName: 'ผู้ดูแลระบบ',
-      bookerName: 'อ.สมชาย ใจดี',
-      department: 'แผนกวิชาเทคโนโลยีสารสนเทศ',
-      attendees: 12,
-      equipment: ['projector', 'videoConference'],
-      note: 'เตรียมสไลด์สรุปยอดเดือนที่ผ่านมา',
+      ...common, bookingId: 'demo-bk-1', roomId: 'demo-room-1', dateKey: today, startMin: 9 * 60, endMin: 10 * 60 + 30,
+      status: 'confirmed', approvalStep: 0, approvalLog: signedLog(3, signedAt),
+      title: 'ประชุมครูและบุคลากรประจำเดือน', bookerName: 'อ.สมชาย ใจดี', requesterPosition: 'ครู', requesterPhone: '081-234-5678',
+      userEmail: 'admin@example.com', userName: 'ผู้ดูแลระบบ', department: 'แผนกวิชาเทคโนโลยีสารสนเทศ', attendees: 120,
+      requestedFacilities: ['projector', 'soundSystem', 'microphone'], note: 'เตรียมสไลด์สรุปผลการดำเนินงาน',
     },
     {
-      bookingId: 'demo-bk-2',
-      roomId: 'demo-room-2',
-      dateKey: today,
-      startMin: 13 * 60,
-      endMin: 14 * 60,
-      status: 'confirmed',
-      title: 'คุยแผนการตลาด Q4',
-      userEmail: 'staff@example.com',
-      userName: 'เจ้าหน้าที่',
-      bookerName: 'นางสาวกนกวรรณ ศรีสุข',
-      department: 'แผนกวิชาการบัญชี',
-      attendees: 5,
-      equipment: ['tv'],
-      note: '',
+      ...common, bookingId: 'demo-bk-2', roomId: 'demo-room-2', dateKey: today, startMin: 13 * 60, endMin: 14 * 60,
+      status: 'confirmed', approvalStep: 0, approvalLog: signedLog(3, signedAt),
+      title: 'ประชุมแผนกวิชาการบัญชี', bookerName: 'นางสาวกนกวรรณ ศรีสุข', requesterPosition: 'หัวหน้าแผนกวิชา', requesterPhone: '089-555-1234',
+      userEmail: 'staff@example.com', userName: 'เจ้าหน้าที่', department: 'แผนกวิชาการบัญชี', attendees: 12,
+      requestedFacilities: ['projector'],
     },
     {
-      bookingId: 'demo-bk-3',
-      roomId: 'demo-room-4',
-      dateKey: today,
-      startMin: 15 * 60,
-      endMin: 17 * 60,
-      status: 'confirmed',
-      title: 'อบรมพนักงานใหม่ รุ่น 12',
-      userEmail: 'hr@example.com',
-      userName: 'งานบุคลากร',
-      bookerName: 'นายประเสริฐ มั่นคง',
-      department: 'แผนกวิชาช่างไฟฟ้ากำลัง',
-      attendees: 28,
-      equipment: ['projector', 'speakerPhone'],
-      note: '',
+      ...common, bookingId: 'demo-bk-3', roomId: 'demo-room-6', dateKey: today, startMin: 15 * 60, endMin: 17 * 60,
+      status: 'confirmed', approvalStep: 0, approvalLog: signedLog(3, signedAt),
+      title: 'อบรมการใช้งานระบบสารสนเทศ', bookerName: 'นายประเสริฐ มั่นคง', requesterPosition: 'ครู', requesterPhone: '086-111-2222',
+      userEmail: 'staff@example.com', userName: 'เจ้าหน้าที่', department: 'แผนกวิชาช่างไฟฟ้ากำลัง', attendees: 30,
+      requestedFacilities: ['internet', 'airConditioning'],
     },
     {
-      bookingId: 'demo-bk-4',
-      roomId: 'demo-room-3',
-      dateKey: tomorrow,
-      startMin: 10 * 60,
-      endMin: 11 * 60,
-      status: 'confirmed',
-      title: 'สัมภาษณ์ผู้สมัครตำแหน่งนักบัญชี',
-      userEmail: 'hr@example.com',
-      userName: 'งานบุคลากร',
-      bookerName: 'อ.วิภาวรรณ แก้วมณี',
-      department: 'แผนกวิชาช่างไฟฟ้ากำลัง',
-      attendees: 3,
-      equipment: [],
-      note: '',
+      ...common, bookingId: 'demo-bk-4', roomId: 'demo-room-3', dateKey: tomorrow, startMin: 10 * 60, endMin: 11 * 60,
+      status: 'confirmed', approvalStep: 0, approvalLog: signedLog(3, signedAt),
+      title: 'ประชุมคณะกรรมการบริหารสถานศึกษา', bookerName: 'อ.วิภาวรรณ แก้วมณี', requesterPosition: 'รองผู้อำนวยการ', requesterPhone: '081-999-0000',
+      userEmail: 'admin@example.com', userName: 'ผู้ดูแลระบบ', department: 'แผนกวิชาเทคโนโลยีสารสนเทศ', attendees: 10,
     },
     {
-      bookingId: 'demo-bk-5',
-      roomId: 'demo-room-1',
-      dateKey: tomorrow,
-      startMin: 14 * 60,
-      endMin: 15 * 60 + 30,
-      status: 'cancelled',
-      title: 'นำเสนองานลูกค้า (เลื่อนออกไป)',
-      userEmail: 'staff@example.com',
-      userName: 'เจ้าหน้าที่',
-      bookerName: 'นายธนพล รุ่งเรือง',
-      department: 'แผนกวิชาการบัญชี',
-      attendees: 8,
-      equipment: ['projector'],
-      note: 'ลูกค้าขอเลื่อน',
+      ...common, bookingId: 'demo-bk-5', roomId: 'demo-room-2', dateKey: tomorrow, startMin: 11 * 60, endMin: 12 * 60,
+      status: 'pending', approvalStep: 1, approvalLog: [],
+      title: 'ประชุมเตรียมงานวันวิชาการ', bookerName: 'นางสุดารัตน์ บุญมา', requesterPosition: 'ครู', requesterPhone: '082-345-6789',
+      userEmail: 'staff@example.com', userName: 'เจ้าหน้าที่', department: 'แผนกวิชาการบัญชี', attendees: 25,
+      requestedFacilities: ['projector', 'microphone'], extraFurnitureCount: 10,
     },
     {
-      bookingId: 'demo-bk-6',
-      roomId: 'demo-room-2',
-      dateKey: tomorrow,
-      startMin: 11 * 60,
-      endMin: 12 * 60,
-      status: 'pending',
-      title: 'ประชุมวางแผนกิจกรรมวิทยาลัย',
-      userEmail: 'staff@example.com',
-      userName: 'เจ้าหน้าที่',
-      bookerName: 'นางสุดารัตน์ บุญมา',
-      department: 'แผนกวิชาการบัญชี',
-      attendees: 6,
-      equipment: ['tv'],
-      note: 'ขออนุมัติการใช้ห้องประชุม',
-      requesterPosition: 'เจ้าหน้าที่',
-      requesterPhone: '02-000-0000',
-      requestedFacilities: ['projector', 'microphone'],
-      extraFurnitureCount: 0,
-      otherFacility: '',
-      termsAccepted: true,
+      ...common, bookingId: 'demo-bk-6', roomId: 'demo-room-5', dateKey: later, startMin: 9 * 60, endMin: 12 * 60,
+      status: 'pending', approvalStep: 2, approvalLog: signedLog(1, signedAt),
+      title: 'กิจกรรมปฐมนิเทศนักศึกษาฝึกงาน', bookerName: 'นายธนพล รุ่งเรือง', requesterPosition: 'ครูที่ปรึกษา', requesterPhone: '087-654-3210',
+      userEmail: 'staff@example.com', userName: 'เจ้าหน้าที่', department: 'แผนกวิชาช่างไฟฟ้ากำลัง', attendees: 200,
+      requestedFacilities: ['soundSystem', 'microphone'],
+    },
+    {
+      ...common, bookingId: 'demo-bk-7', roomId: 'demo-room-1', dateKey: tomorrow, startMin: 14 * 60, endMin: 15 * 60 + 30,
+      status: 'cancelled', approvalStep: 0, approvalLog: [],
+      title: 'ซ้อมพิธีมอบประกาศนียบัตร', bookerName: 'นายธนพล รุ่งเรือง', requesterPosition: 'ครู', requesterPhone: '087-654-3210',
+      userEmail: 'staff@example.com', userName: 'เจ้าหน้าที่', department: 'แผนกวิชาช่างไฟฟ้ากำลัง', attendees: 60,
     },
   ];
 }
@@ -269,7 +196,8 @@ function seedBookings(): DemoBooking[] {
  * (แต่ละคนเห็นข้อมูลของตัวเอง) แต่อย่างน้อยรีเฟรชหน้าแล้วการจองไม่หาย
  * เก็บเฉพาะการจอง ไม่เก็บค่าตั้งค่า เพื่อให้แก้ค่าเริ่มต้นในโค้ดแล้วมีผลทันที
  */
-const LOCAL_STORAGE_KEY = 'mrb.local-bookings.v1';
+// v2: เปลี่ยนเป็นห้องจริงของวิทยาลัยและเพิ่มการอนุมัติ 3 ขั้น — ข้อมูลชุดเก่าอ้างห้องที่ไม่มีแล้วจึงไม่อ่านต่อ
+const LOCAL_STORAGE_KEY = 'mrb.local-bookings.v2';
 
 function loadState(): DemoState {
   const state = createState();
@@ -296,7 +224,7 @@ function saveState(state: DemoState): void {
 function createState(): DemoState {
   return {
     settings: { ...DEFAULT_SYSTEM_SETTINGS },
-    users: [DEMO_ADMIN, DEMO_STAFF],
+    users: [...DEMO_ACCOUNTS],
     rooms: seedRooms(),
     bookings: seedBookings(),
     announcements: seedAnnouncements(),
@@ -322,8 +250,8 @@ export function createDemoTransport(): Transport {
   const handlers: Record<string, (payload: never, token: string) => unknown> = {
     ping: () => ({ pong: true, serverTime: new Date().toISOString() }),
 
-    login: (payload: { role?: string }) => {
-      const user = payload?.role === 'staff' ? DEMO_STAFF : DEMO_ADMIN;
+    login: (payload: { role?: string; email?: string }) => {
+      const user = DEMO_ACCOUNTS.find((account) => account.email === payload?.email) ?? (payload?.role === 'staff' ? DEMO_STAFF : DEMO_ADMIN);
       return { token: `${DEMO_TOKEN_PREFIX}${user.email}`, user };
     },
 
@@ -339,7 +267,7 @@ export function createDemoTransport(): Transport {
     bookings: (payload: { from?: string; to?: string }, token) => {
       const user = userFromToken(token);
       return { bookings: state.bookings.filter((booking) =>
-        (user.role === 'admin' || booking.userEmail === user.email) &&
+        (canSeeAllBookings(user.role) || booking.userEmail === user.email) &&
         (!payload.from || booking.dateKey >= payload.from) && (!payload.to || booking.dateKey <= payload.to),
       ) };
     },
@@ -347,6 +275,7 @@ export function createDemoTransport(): Transport {
       userFromToken(token);
       const parsed = validateAvailabilityInput(payload);
       if (!parsed.ok) throw new ApiError('VALIDATION', parsed.issues.map((issue) => issue.message).join(' '), parsed.issues);
+      if (isOpenLocationRoom(state.rooms.find((room) => room.roomId === parsed.value.roomId))) return { busy: [] };
       return { busy: busySlotsFor(state.bookings, parsed.value.roomId, parsed.value.dateKey) };
     },
     createBooking: (payload: unknown, token) => {
@@ -360,9 +289,16 @@ export function createDemoTransport(): Transport {
       const activeCount = state.bookings.filter((item) => item.userEmail === user.email && ['pending','confirmed'].includes(item.status)).length;
       const rules = validateBookingRules(input, { settings: state.settings, room, now: new Date(), isAdmin: user.role === 'admin', activeBookingCount: activeCount });
       if (!rules.ok) throw new ApiError('VALIDATION', rules.issues.map((issue) => issue.message).join(' · '));
-      const conflicts = findConflicts({ startMin: input.startMin, endMin: input.endMin }, state.bookings.filter((item) => item.roomId === room.roomId && item.dateKey === input.dateKey && ['pending','confirmed'].includes(item.status)).map((item) => ({ bookingId: item.bookingId, startMin: item.startMin, endMin: item.endMin })));
+      const openLocation = isOpenLocationRoom(room);
+      if (openLocation && input.customLocation.trim() === '') throw new ApiError('VALIDATION', 'กรุณาระบุสถานที่ที่ต้องการใช้');
+      const conflicts = openLocation ? [] : findConflicts({ startMin: input.startMin, endMin: input.endMin }, state.bookings.filter((item) => item.roomId === room.roomId && item.dateKey === input.dateKey && ['pending','confirmed'].includes(item.status)).map((item) => ({ bookingId: item.bookingId, startMin: item.startMin, endMin: item.endMin })));
       if (conflicts.length) throw new ApiError('CONFLICT', 'ช่วงเวลานี้มีผู้จองแล้ว กรุณาเลือกเวลาใหม่');
-      const booking: DemoBooking = { ...input, bookingId: `demo-bk-${Date.now()}`, status: state.settings.approvalRequired ? 'pending' : 'confirmed', userEmail: user.email, userName: user.displayName };
+      const needsApproval = state.settings.approvalRequired;
+      const booking: DemoBooking = {
+        ...input, customLocation: openLocation ? input.customLocation : '', bookingId: `demo-bk-${Date.now()}`,
+        status: needsApproval ? 'pending' : 'confirmed', approvalStep: needsApproval ? 1 : 0, approvalLog: [],
+        userEmail: user.email, userName: user.displayName,
+      };
       state.bookings.push(booking); state.dataVersion += 1; saveState(state);
       return { booking };
     },
@@ -375,17 +311,23 @@ export function createDemoTransport(): Transport {
       booking.status = 'cancelled'; booking.note = payload.reason || booking.note; state.dataVersion += 1; saveState(state);
       return { booking };
     },
-    decideBooking: (payload: { bookingId: string; decision: 'approve'|'reject'; reason?: string }, token) => {
+    decideBooking: (payload: unknown, token) => {
       const user = userFromToken(token);
-      if (user.role !== 'admin') throw new ApiError('FORBIDDEN', 'ต้องเป็นผู้ดูแลระบบจึงจะอนุมัติรายการได้');
-      const booking = state.bookings.find((item) => item.bookingId === payload.bookingId);
+      const parsed = validateDecideBookingInput(payload);
+      if (!parsed.ok) throw new ApiError('VALIDATION', 'ข้อมูลการพิจารณาไม่ถูกต้อง', parsed.issues);
+      const booking = state.bookings.find((item) => item.bookingId === parsed.value.bookingId);
       if (!booking) throw new ApiError('NOT_FOUND', 'ไม่พบรายการจอง');
-      if (booking.status !== 'pending') throw new ApiError('CONFLICT', 'รายการนี้ไม่ได้อยู่ระหว่างรออนุมัติ');
-      if (payload.decision === 'reject' && !payload.reason?.trim()) throw new ApiError('VALIDATION', 'กรุณาระบุเหตุผลที่ไม่อนุมัติ');
-      booking.status = payload.decision === 'approve' ? 'confirmed' : 'rejected';
-      if (payload.reason?.trim()) booking.note = `${booking.note}${booking.note ? '\n' : ''}ผลพิจารณา: ${payload.reason.trim()}`;
+      const result = decideApprovalStep(
+        { status: booking.status, approvalStep: booking.approvalStep ?? (booking.status === 'pending' ? 1 : 0), approvalLog: booking.approvalLog ?? [] },
+        user, parsed.value.decision, parsed.value.reason, new Date().toISOString(),
+      );
+      if (!result.ok) throw new ApiError(result.code, result.message);
+      booking.status = result.next.status as BookingStatus;
+      booking.approvalStep = result.next.approvalStep;
+      booking.approvalLog = result.next.approvalLog;
+      if (parsed.value.decision === 'reject') booking.note = `${booking.note}${booking.note ? '\n' : ''}ผลพิจารณา: ${parsed.value.reason.trim()}`;
       state.dataVersion += 1; saveState(state);
-      return { booking };
+      return { booking, nextStep: result.nextStep };
     },
     announcements: (_payload, token) => {
       userFromToken(token);

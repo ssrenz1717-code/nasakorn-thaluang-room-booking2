@@ -163,7 +163,7 @@ function login_(idToken) {
     const token = Domain.createSessionToken(
       {
         email: String(user.email),
-        role: String(user.role) === 'admin' ? 'admin' : 'staff',
+        role: Domain.normalizeUserRole(user.role),
         tokenVersion: Number(user.tokenVersion) || 1,
         expiresAt: Domain.sessionExpiryFrom(now, SESSION_TTL_MS),
       },
@@ -191,7 +191,7 @@ function publicUser_(user) {
     email: String(user.email),
     displayName: String(user.displayName || user.email),
     department: String(user.department || ''),
-    role: String(user.role) === 'admin' ? 'admin' : 'staff',
+    role: Domain.normalizeUserRole(user.role),
     status: String(user.status || 'active'),
   };
 }

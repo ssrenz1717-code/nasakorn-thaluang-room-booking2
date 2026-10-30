@@ -26,7 +26,8 @@ export interface ApiClient {
   readonly mode: 'http' | 'demo';
   ping(): Promise<{ pong: boolean; serverTime: string }>;
   loginWithGoogle(idToken: string): Promise<LoginResult>;
-  loginDemo(role: 'admin' | 'staff'): Promise<LoginResult>;
+  /** โหมดข้อมูลในเบราว์เซอร์: เข้าระบบตาม role หรือเลือกบัญชีตัวอย่างด้วยอีเมล */
+  loginDemo(role: 'admin' | 'staff', email?: string): Promise<LoginResult>;
   me(token: string): Promise<{ user: SessionUser }>;
   bootstrap(token: string): Promise<BootstrapResult>;
   version(): Promise<VersionResult>;
@@ -49,7 +50,7 @@ function wrap(transport: Transport): ApiClient {
     mode: transport.kind,
     ping: () => transport.call('ping'),
     loginWithGoogle: (idToken) => transport.call('login', { idToken }),
-    loginDemo: (role) => transport.call('login', { role }),
+    loginDemo: (role, email) => transport.call('login', { role, email }),
     me: (token) => transport.call('me', {}, token),
     bootstrap: (token) => transport.call('bootstrap', {}, token),
     version: () => transport.version(),

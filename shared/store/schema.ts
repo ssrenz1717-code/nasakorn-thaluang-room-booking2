@@ -122,6 +122,10 @@ export const SHEET_SPECS: SheetSpec[] = [
       'reminderSentAt',
       'completedAt',
       'bookerName',
+      // การอนุมัติ 3 ขั้น: ขั้นที่รออยู่ และประวัติผู้ลงนาม (JSON)
+      'approvalStep',
+      'approvalLog',
+      'customLocation',
     ],
   },
   {

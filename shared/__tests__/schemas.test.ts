@@ -141,21 +141,32 @@ describe('ตรวจคำขอจอง', () => {
     startMin: 600,
     endMin: 660,
     attendees: 5,
+    title: 'ประชุมครูประจำแผนก',
+    department: 'แผนกวิชาการบัญชี',
+    requesterPosition: 'ครู',
+    requesterPhone: '081-234-5678',
   };
 
-  it('ต้องมีชื่อผู้จอง แต่หัวข้อการประชุมไม่บังคับแล้ว', () => {
+  it('ต้องมีชื่อ ตำแหน่ง หน่วยงาน เบอร์โทร และเรื่อง ครบตามแบบคำขอ', () => {
     const { bookerName: _omit, ...withoutName } = valid;
     expect(validateBookingRequest(withoutName).ok).toBe(false);
-    const result = validateBookingRequest({ ...valid, title: '' });
-    expect(result.ok && result.value.title).toBe('');
+    for (const field of ['title', 'department', 'requesterPosition', 'requesterPhone'] as const) {
+      expect(validateBookingRequest({ ...valid, [field]: '  ' }).ok).toBe(false);
+    }
+    const result = validateBookingRequest(valid);
     expect(result.ok && result.value.bookerName).toBe('อ.สมชาย ใจดี');
+  });
+
+  it('เบอร์โทรรับเบอร์มือถือและเบอร์ภายใน แต่ไม่รับตัวอักษร', () => {
+    expect(validateBookingRequest({ ...valid, requesterPhone: '0812345678' }).ok).toBe(true);
+    expect(validateBookingRequest({ ...valid, requesterPhone: '036-123456 ต่อ 12' }).ok).toBe(true);
+    expect(validateBookingRequest({ ...valid, requesterPhone: 'ไม่มี' }).ok).toBe(false);
   });
 
   it('คำขอที่ถูกต้องผ่านและเติมค่าเริ่มต้น', () => {
     const result = validateBookingRequest(valid);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.department).toBe('');
       expect(result.value.note).toBe('');
       expect(result.value.equipment).toEqual([]);
     }

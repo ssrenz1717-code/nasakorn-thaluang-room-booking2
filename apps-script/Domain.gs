@@ -24,16 +24,19 @@ var Domain = (() => {
   __export(index_exports, {
     ANNOUNCEMENT_TONES: () => ANNOUNCEMENT_TONES,
     ANNOUNCEMENT_TONE_LABEL_TH: () => ANNOUNCEMENT_TONE_LABEL_TH,
+    APPROVAL_STEPS: () => APPROVAL_STEPS,
     BANGKOK_TZ: () => BANGKOK_TZ,
     BOOKING_DECISIONS: () => BOOKING_DECISIONS,
     BOOKING_HOT_COLUMNS: () => BOOKING_HOT_COLUMNS,
     BOOKING_STATUSES: () => BOOKING_STATUSES,
     BOOKING_STATUS_LABEL_TH: () => BOOKING_STATUS_LABEL_TH,
+    COLLEGE_ROOMS: () => COLLEGE_ROOMS,
     Check: () => Check,
     DATE_KEY_PATTERN: () => DATE_KEY_PATTERN,
     DEFAULT_SYSTEM_SETTINGS: () => DEFAULT_SYSTEM_SETTINGS,
     LOCK_HOLDING_STATUSES: () => LOCK_HOLDING_STATUSES,
     MINUTES_PER_DAY: () => MINUTES_PER_DAY,
+    OPEN_LOCATION_ROOM_CODE: () => OPEN_LOCATION_ROOM_CODE,
     REQUEST_FACILITIES: () => REQUEST_FACILITIES,
     REQUEST_FACILITY_LABEL_TH: () => REQUEST_FACILITY_LABEL_TH,
     ROOM_EQUIPMENT: () => ROOM_EQUIPMENT,
@@ -65,6 +68,7 @@ var Domain = (() => {
     businessWindow: () => businessWindow,
     busySlotsFor: () => busySlotsFor,
     canCancelBooking: () => canCancelBooking,
+    canSeeAllBookings: () => canSeeAllBookings,
     canTransition: () => canTransition,
     computeUtilization: () => computeUtilization,
     conflictingSlots: () => conflictingSlots,
@@ -72,8 +76,10 @@ var Domain = (() => {
     countDaysInclusive: () => countDaysInclusive,
     countsAsUsage: () => countsAsUsage,
     createSessionToken: () => createSessionToken,
+    currentApprovalStep: () => currentApprovalStep,
     dateKeyRange: () => dateKeyRange,
     dayOfWeekOfDateKey: () => dayOfWeekOfDateKey,
+    decideApprovalStep: () => decideApprovalStep,
     findConflicts: () => findConflicts,
     findRowNumber: () => findRowNumber,
     formatTimeOfDay: () => formatTimeOfDay,
@@ -81,22 +87,27 @@ var Domain = (() => {
     freeGaps: () => freeGaps,
     fromDateKeyAndMinutes: () => fromDateKeyAndMinutes,
     holdsRoomLock: () => holdsRoomLock,
+    isAwaitingRole: () => isAwaitingRole,
     isBookableRoomStatus: () => isBookableRoomStatus,
     isEndBlocked: () => isEndBlocked,
     isFinalStatus: () => isFinalStatus,
+    isOpenLocationRoom: () => isOpenLocationRoom,
     isStartBlocked: () => isStartBlocked,
     keyValueToObject: () => keyValueToObject,
     mergeIntervals: () => mergeIntervals,
     missingColumns: () => missingColumns,
     normalizeDateKey: () => normalizeDateKey,
+    normalizeUserRole: () => normalizeUserRole,
     objectToRow: () => objectToRow,
     overlaps: () => overlaps,
+    parseApprovalLog: () => parseApprovalLog,
     parseTimeOfDay: () => parseTimeOfDay,
     readBoolean: () => readBoolean,
     readList: () => readList,
     readNumber: () => readNumber,
     readSettingsOrDefault: () => readSettingsOrDefault,
     readString: () => readString,
+    roleForStep: () => roleForStep,
     rowToObject: () => rowToObject,
     rowsToObjects: () => rowsToObjects,
     rowsToSettings: () => rowsToSettings,
@@ -104,6 +115,7 @@ var Domain = (() => {
     sessionExpiryFrom: () => sessionExpiryFrom,
     settingsToRows: () => settingsToRows,
     sheetSpec: () => sheetSpec,
+    stepForRole: () => stepForRole,
     suggestAlternatives: () => suggestAlternatives,
     toDateKey: () => toDateKey,
     toMinutesOfDay: () => toMinutesOfDay,
@@ -525,7 +537,11 @@ var Domain = (() => {
         "cancelReason",
         "reminderSentAt",
         "completedAt",
-        "bookerName"
+        "bookerName",
+        // การอนุมัติ 3 ขั้น: ขั้นที่รออยู่ และประวัติผู้ลงนาม (JSON)
+        "approvalStep",
+        "approvalLog",
+        "customLocation"
       ]
     },
     {
@@ -648,11 +664,18 @@ var Domain = (() => {
   }
 
   // shared/schemas/user.ts
-  var USER_ROLES = ["admin", "staff"];
+  var USER_ROLES = ["admin", "staff", "inspector", "endorser", "director"];
   var USER_ROLE_LABEL_TH = {
     admin: "\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A",
-    staff: "\u0E1E\u0E19\u0E31\u0E01\u0E07\u0E32\u0E19"
+    staff: "\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19",
+    inspector: "\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48\u0E15\u0E23\u0E27\u0E08\u0E2B\u0E49\u0E2D\u0E07",
+    endorser: "\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E23\u0E2D\u0E07",
+    director: "\u0E1C\u0E39\u0E49\u0E2D\u0E19\u0E38\u0E21\u0E31\u0E15\u0E34"
   };
+  function normalizeUserRole(raw) {
+    const value = String(raw != null ? raw : "").trim();
+    return USER_ROLES.includes(value) ? value : "staff";
+  }
   var USER_STATUSES = ["active", "disabled"];
   var USER_STATUS_LABEL_TH = {
     active: "\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E44\u0E14\u0E49",
@@ -1070,6 +1093,20 @@ var Domain = (() => {
     };
     return check.result(value);
   }
+  var OPEN_LOCATION_ROOM_CODE = "OTHER";
+  function isOpenLocationRoom(room) {
+    var _a;
+    return String((_a = room == null ? void 0 : room.code) != null ? _a : "").trim().toUpperCase() === OPEN_LOCATION_ROOM_CODE;
+  }
+  var COLLEGE_ROOMS = [
+    { code: "R01", name: "\u0E2B\u0E2D\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E2D\u0E14\u0E34\u0E40\u0E23\u0E01\u0E2A\u0E32\u0E23", capacity: 300 },
+    { code: "R02", name: "\u0E2B\u0E49\u0E2D\u0E07\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E2A\u0E31\u0E01\u0E17\u0E2D\u0E07", capacity: 40 },
+    { code: "R03", name: "\u0E2B\u0E49\u0E2D\u0E07\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E2B\u0E19\u0E49\u0E32\u0E2B\u0E49\u0E2D\u0E07\u0E1C\u0E39\u0E49\u0E2D\u0E33\u0E19\u0E27\u0E22\u0E01\u0E32\u0E23", capacity: 20 },
+    { code: "R04", name: "\u0E2B\u0E49\u0E2D\u0E07\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21 (\u0E01\u0E32\u0E41\u0E1F)", capacity: 15 },
+    { code: "R05", name: "\u0E2D\u0E32\u0E04\u0E32\u0E23\u0E42\u0E14\u0E21\u0E40\u0E2D\u0E19\u0E01\u0E1B\u0E23\u0E30\u0E2A\u0E07\u0E04\u0E4C", capacity: 500 },
+    { code: "R06", name: "\u0E2B\u0E49\u0E2D\u0E07\u0E04\u0E2D\u0E21\u0E1E\u0E34\u0E27\u0E40\u0E15\u0E2D\u0E23\u0E4C\u0E01\u0E25\u0E32\u0E07 (\u0E2B\u0E49\u0E2D\u0E07\u0E42\u0E2A\u0E15)", capacity: 40 },
+    { code: OPEN_LOCATION_ROOM_CODE, name: "\u0E2D\u0E37\u0E48\u0E19 \u0E46 (\u0E23\u0E30\u0E1A\u0E38\u0E2A\u0E16\u0E32\u0E19\u0E17\u0E35\u0E48)", capacity: 1e3 }
+  ];
 
   // shared/domain/booking-rules.ts
   function validateBookingRules(input, context) {
@@ -1212,6 +1249,68 @@ var Domain = (() => {
     return `${(rate * 100).toFixed(fractionDigits)}%`;
   }
 
+  // shared/domain/approval.ts
+  var APPROVAL_STEPS = [
+    { step: 1, role: "inspector", action: "\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E2B\u0E49\u0E2D\u0E07", signer: "\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48\u0E1C\u0E39\u0E49\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E2B\u0E49\u0E2D\u0E07", waiting: "\u0E23\u0E2D\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48\u0E15\u0E23\u0E27\u0E08\u0E2B\u0E49\u0E2D\u0E07" },
+    { step: 2, role: "endorser", action: "\u0E23\u0E31\u0E1A\u0E23\u0E2D\u0E07", signer: "\u0E2B\u0E31\u0E27\u0E2B\u0E19\u0E49\u0E32\u0E07\u0E32\u0E19 / \u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E23\u0E2D\u0E07", waiting: "\u0E23\u0E2D\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E23\u0E2D\u0E07" },
+    { step: 3, role: "director", action: "\u0E2D\u0E19\u0E38\u0E21\u0E31\u0E15\u0E34", signer: "\u0E1C\u0E39\u0E49\u0E1E\u0E34\u0E08\u0E32\u0E23\u0E13\u0E32\u0E2D\u0E19\u0E38\u0E21\u0E31\u0E15\u0E34", waiting: "\u0E23\u0E2D\u0E1C\u0E39\u0E49\u0E2D\u0E19\u0E38\u0E21\u0E31\u0E15\u0E34" }
+  ];
+  function currentApprovalStep(booking) {
+    if (booking.status !== "pending") return 0;
+    const step = Number(booking.approvalStep);
+    return Number.isInteger(step) && step >= 1 && step <= APPROVAL_STEPS.length ? step : 1;
+  }
+  function roleForStep(step) {
+    var _a, _b;
+    return (_b = (_a = APPROVAL_STEPS.find((item) => item.step === step)) == null ? void 0 : _a.role) != null ? _b : null;
+  }
+  function stepForRole(role) {
+    var _a, _b;
+    return (_b = (_a = APPROVAL_STEPS.find((item) => item.role === role)) == null ? void 0 : _a.step) != null ? _b : 0;
+  }
+  function canSeeAllBookings(role) {
+    return role !== "staff";
+  }
+  function isAwaitingRole(booking, role) {
+    const step = currentApprovalStep(booking);
+    return step > 0 && roleForStep(step) === role;
+  }
+  function parseApprovalLog(raw) {
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw !== "string" || raw.trim() === "") return [];
+    try {
+      const parsed = JSON.parse(raw.replace(/^'/, ""));
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  function decideApprovalStep(booking, actor, decision, reason, nowIso) {
+    const step = currentApprovalStep(booking);
+    if (step === 0) return { ok: false, code: "CONFLICT", message: "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E2D\u0E22\u0E39\u0E48\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07\u0E23\u0E2D\u0E2D\u0E19\u0E38\u0E21\u0E31\u0E15\u0E34" };
+    const stepInfo = APPROVAL_STEPS[step - 1];
+    if (actor.role !== stepInfo.role) {
+      return { ok: false, code: "FORBIDDEN", message: `\u0E02\u0E31\u0E49\u0E19\u0E19\u0E35\u0E49 (${stepInfo.action}) \u0E15\u0E49\u0E2D\u0E07\u0E25\u0E07\u0E19\u0E32\u0E21\u0E42\u0E14\u0E22${stepInfo.signer}` };
+    }
+    const email = actor.email.toLowerCase();
+    if (booking.approvalLog.some((entry2) => entry2.email.toLowerCase() === email)) {
+      return { ok: false, code: "FORBIDDEN", message: "\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E25\u0E07\u0E19\u0E32\u0E21\u0E43\u0E19\u0E02\u0E31\u0E49\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E2B\u0E19\u0E49\u0E32\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E25\u0E30\u0E02\u0E31\u0E49\u0E19\u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E04\u0E19\u0E25\u0E30\u0E1A\u0E31\u0E0D\u0E0A\u0E35" };
+    }
+    const trimmed = reason.trim();
+    if (decision === "reject" && trimmed === "") {
+      return { ok: false, code: "VALIDATION", message: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E23\u0E30\u0E1A\u0E38\u0E40\u0E2B\u0E15\u0E38\u0E1C\u0E25\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E2D\u0E19\u0E38\u0E21\u0E31\u0E15\u0E34" };
+    }
+    const entry = { step, decision, email: actor.email, name: actor.displayName, at: nowIso, reason: trimmed };
+    const approvalLog = [...booking.approvalLog, entry];
+    if (decision === "reject") {
+      return { ok: true, next: { status: "rejected", approvalStep: 0, approvalLog }, finished: true, nextStep: 0 };
+    }
+    if (step === APPROVAL_STEPS.length) {
+      return { ok: true, next: { status: "confirmed", approvalStep: 0, approvalLog }, finished: true, nextStep: 0 };
+    }
+    return { ok: true, next: { status: "pending", approvalStep: step + 1, approvalLog }, finished: false, nextStep: step + 1 };
+  }
+
   // shared/schemas/booking.ts
   var REQUEST_FACILITIES = ["projector", "soundSystem", "microphone", "airConditioning", "internet"];
   var REQUEST_FACILITY_LABEL_TH = {
@@ -1237,7 +1336,7 @@ var Domain = (() => {
     });
     const value = {
       bookerName: check.string("bookerName", input.bookerName, { label: "\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E08\u0E2D\u0E07", max: 100 }),
-      title: check.string("title", input.title, { label: "\u0E2B\u0E31\u0E27\u0E02\u0E49\u0E2D\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21", max: 200, fallback: "" }),
+      title: check.string("title", input.title, { label: "\u0E40\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E14\u0E33\u0E40\u0E19\u0E34\u0E19\u0E07\u0E32\u0E19", min: 1, max: 200 }),
       roomId: check.string("roomId", input.roomId, { label: "\u0E2B\u0E49\u0E2D\u0E07\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21" }),
       dateKey: check.string("dateKey", input.dateKey, {
         label: "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48",
@@ -1251,19 +1350,22 @@ var Domain = (() => {
         min: 1
       }),
       department: check.string("department", input.department, {
-        label: "\u0E41\u0E1C\u0E19\u0E01",
-        max: 100,
-        fallback: ""
+        label: "\u0E2B\u0E19\u0E48\u0E27\u0E22\u0E07\u0E32\u0E19 / \u0E2A\u0E32\u0E02\u0E32\u0E27\u0E34\u0E0A\u0E32",
+        min: 1,
+        max: 100
       }),
       requesterPosition: check.string("requesterPosition", input.requesterPosition, {
         label: "\u0E15\u0E33\u0E41\u0E2B\u0E19\u0E48\u0E07",
-        max: 100,
-        fallback: ""
+        min: 1,
+        max: 100
       }),
+      // เบอร์มือถือ เบอร์โต๊ะ หรือเบอร์ภายใน (เช่น "ต่อ 123") — ตรวจแค่ว่าเป็นตัวเลขกับเครื่องหมายที่ใช้เขียนเบอร์
       requesterPhone: check.string("requesterPhone", input.requesterPhone, {
         label: "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E42\u0E17\u0E23\u0E28\u0E31\u0E1E\u0E17\u0E4C",
+        min: 3,
         max: 30,
-        fallback: ""
+        pattern: /^[0-9+()\-.\s]*(?:ต่อ\s*[0-9]+)?$/,
+        patternMessage: "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E25\u0E02\u0E42\u0E17\u0E23\u0E28\u0E31\u0E1E\u0E17\u0E4C\u0E43\u0E2A\u0E48\u0E44\u0E14\u0E49\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02 \u0E40\u0E0A\u0E48\u0E19 081-234-5678 \u0E2B\u0E23\u0E37\u0E2D \u0E15\u0E48\u0E2D 123"
       }),
       note: check.string("note", input.note, {
         label: "\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E40\u0E15\u0E34\u0E21",
@@ -1286,6 +1388,7 @@ var Domain = (() => {
         max: 300,
         fallback: ""
       }),
+      customLocation: check.string("customLocation", input.customLocation, { label: "\u0E2A\u0E16\u0E32\u0E19\u0E17\u0E35\u0E48\u0E17\u0E35\u0E48\u0E23\u0E30\u0E1A\u0E38\u0E40\u0E2D\u0E07", max: 200, fallback: "" }),
       termsAccepted: check.boolean("termsAccepted", input.termsAccepted, {
         label: "\u0E01\u0E32\u0E23\u0E22\u0E2D\u0E21\u0E23\u0E31\u0E1A\u0E40\u0E07\u0E37\u0E48\u0E2D\u0E19\u0E44\u0E02",
         fallback: false

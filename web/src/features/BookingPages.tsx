@@ -7,7 +7,7 @@ import { TimeSelect } from '../components/ui/TimeSelect';
 import { RoomAvailability } from '../components/ui/RoomAvailability';
 import { useRoomAvailability } from '../lib/hooks/useRoomAvailability';
 import { conflictingSlots, isEndBlocked, isStartBlocked } from '@shared/domain/availability';
-import { ROOM_EQUIPMENT_LABEL_TH } from '@shared/schemas/room';
+import { ROOM_EQUIPMENT_LABEL_TH, isOpenLocationRoom } from '@shared/schemas/room';
 import { REQUEST_FACILITIES, REQUEST_FACILITY_LABEL_TH, type BookingRequest, type RequestFacility } from '@shared/schemas/booking';
 import { useApp, useCurrentUser, useSettings } from '../app/providers/AppProvider';
 import { PageHeader } from '../components/layout/PageHeader';
@@ -22,6 +22,8 @@ import { CalendarFilters, matchesBookingQuery } from './booking/CalendarFilters'
 import { downloadBookingsCsv } from '../lib/export/bookingsCsv';
 import { roomColorOf } from './booking/roomBands';
 import { cn } from '../lib/cn';
+import { ApprovalProgress } from './approvals/ApprovalProgress';
+import { APPROVAL_STEPS, currentApprovalStep } from '@shared/domain/approval';
 
 export { BookingPage } from './booking/BookingPage';
 
@@ -57,9 +59,9 @@ export function BookingsPage({ calendar = false }: { calendar?: boolean }) {
   const visibleBookings = useMemo(()=>bookings.filter((booking)=>(roomFilter.length===0||roomFilter.includes(booking.roomId))&&matchesBookingQuery(booking,query)),[bookings,roomFilter,query]);
   const rows = useMemo(()=>bookings.filter((b)=>calendar ? b.dateKey===day : b.userEmail===user.email).sort((a,b)=>a.dateKey.localeCompare(b.dateKey)||a.startMin-b.startMin),[bookings,calendar,day,user.email]);
   const cancel = async (bookingId:string) => { setBusyId(bookingId); try { await api.cancelBooking(token,bookingId); setNotice('ยกเลิกรายการจองแล้ว'); await load(); } catch(e) { setError(e instanceof Error?e.message:'ยกเลิกไม่สำเร็จ'); } finally {setBusyId('');} };
-  const createFromCalendar = async (values:Omit<BookingRequest,'department'|'equipment'>) => {
+  const createFromCalendar = async (values:Omit<BookingRequest,'equipment'>) => {
     setBusyId('create');setError('');
-    try { await api.createBooking(token,{...values,department:user.department,equipment:[]});setDraft(null);setSelection(null);setNotice('จองห้องเรียบร้อยแล้ว');await load(); }
+    try { await api.createBooking(token,{...values,equipment:[]});setDraft(null);setSelection(null);setNotice('จองห้องเรียบร้อยแล้ว');await load(); }
     catch(e){setError(e instanceof Error?e.message:'จองห้องไม่สำเร็จ');}
     finally{setBusyId('');}
   };
@@ -68,7 +70,7 @@ export function BookingsPage({ calendar = false }: { calendar?: boolean }) {
     {calendar && <CalendarFilters rooms={rooms} selectedRooms={roomFilter} query={query} resultCount={visibleBookings.length} onRooms={setRoomFilter} onQuery={setQuery} onExport={()=>downloadBookingsCsv(visibleBookings,rooms,`การจองห้องประชุม-${toDateKey(new Date())}`)}/>}
     {calendar && <CalendarView bookings={visibleBookings} rooms={rooms} day={day} mode={calendarMode} slotMinutes={settings.slotMinutes} selection={draft?selection:null} onDay={setDay} onMode={setCalendarMode} onCreateSlot={(dateKey,startMin)=>{setDraft({dateKey,startMin});setError('');}}/>}
     {calendar&&draft&&<CalendarBookingDialog draft={draft} rooms={rooms} settings={settings} busy={busyId==='create'} error={error} onClose={()=>{setDraft(null);setSelection(null);}} onTimeChange={setSelection} side={dateFromKey(draft.dateKey).getUTCDay()>=4?'left':'right'} onSubmit={createFromCalendar}/>}
-    {!calendar && <div className="space-y-3">{rows.map((booking)=><Card key={booking.bookingId}><CardBody className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-ink">{booking.bookerName||booking.userName}</h2><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${booking.status==='confirmed'?'bg-ok-soft text-ok':booking.status==='pending'?'bg-warn-soft text-warn':'bg-neutral-soft text-ink-muted'}`}>{booking.status==='confirmed'?'ยืนยันแล้ว':booking.status==='pending'?'รออนุมัติ':booking.status==='cancelled'?'ยกเลิกแล้ว':booking.status}</span></div><p className="mt-1 text-sm text-ink-muted">{rooms.find((r)=>r.roomId===booking.roomId)?.name||'ห้องประชุม'} · {dateText(booking.dateKey)} · {timeText(booking.startMin)}–{timeText(booking.endMin)}</p><p className="mt-1 text-xs text-ink-subtle">{booking.attendees} คน</p></div>{['confirmed','pending'].includes(booking.status)&&(booking.userEmail===user.email||user.role==='admin')&&<Button variant="danger" size="sm" loading={busyId===booking.bookingId} onClick={()=>void cancel(booking.bookingId)}>ยกเลิก</Button>}</CardBody></Card>)}
+    {!calendar && <div className="space-y-3">{rows.map((booking)=><Card key={booking.bookingId}><CardBody className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-ink">{booking.title||booking.bookerName||booking.userName}</h2><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${booking.status==='confirmed'?'bg-ok-soft text-ok':booking.status==='pending'?'bg-warn-soft text-warn':'bg-neutral-soft text-ink-muted'}`}>{booking.status==='confirmed'?'ยืนยันแล้ว':booking.status==='pending'?(APPROVAL_STEPS[currentApprovalStep(booking)-1]?.waiting??'รออนุมัติ'):booking.status==='cancelled'?'ยกเลิกแล้ว':booking.status==='rejected'?'ไม่อนุมัติ':booking.status}</span></div><p className="mt-1 text-sm text-ink-muted">{placeName(booking,rooms)} · {dateText(booking.dateKey)} · {timeText(booking.startMin)}–{timeText(booking.endMin)}</p><p className="mt-1 text-xs text-ink-subtle">{booking.bookerName||booking.userName} · {booking.attendees} คน</p><ApprovalProgress booking={booking} className="mt-3 max-w-md"/></div>{['confirmed','pending'].includes(booking.status)&&(booking.userEmail===user.email||user.role==='admin')&&<Button variant="danger" size="sm" loading={busyId===booking.bookingId} onClick={()=>void cancel(booking.bookingId)}>ยกเลิก</Button>}</CardBody></Card>)}
     {!calendar&&!rows.length&&<Card><CardBody className="py-14 text-center"><Search className="mx-auto size-8 text-ink-subtle"/><p className="mt-3 font-medium text-ink">ยังไม่มีรายการจอง</p><p className="mt-1 text-sm text-ink-muted">เลือกห้องและเวลาที่สะดวกเพื่อสร้างรายการแรก</p><Link className="mt-4 inline-flex min-h-11 items-center rounded-control bg-brand px-4 font-medium text-ink-inverse" to="/book">จองห้องประชุม</Link></CardBody></Card>}</div>}
   </>;
 }
@@ -99,16 +101,19 @@ function CalendarView({bookings,rooms,day,mode,slotMinutes,selection,onDay,onMod
   </div>;
 }
 
-function CalendarBookingDialog({draft,rooms,settings,busy,error,onClose,onTimeChange,side,onSubmit}:{draft:{dateKey:string;startMin:number};rooms:DemoRoom[];settings:SystemSettings;busy:boolean;error:string;onClose:()=>void;onTimeChange:(value:SlotSelection)=>void;side:'left'|'right';onSubmit:(values:Omit<BookingRequest,'department'|'equipment'>)=>void}) {
+function CalendarBookingDialog({draft,rooms,settings,busy,error,onClose,onTimeChange,side,onSubmit}:{draft:{dateKey:string;startMin:number};rooms:DemoRoom[];settings:SystemSettings;busy:boolean;error:string;onClose:()=>void;onTimeChange:(value:SlotSelection)=>void;side:'left'|'right';onSubmit:(values:Omit<BookingRequest,'equipment'>)=>void}) {
   const activeRooms=rooms.filter((room)=>room.status==='active');
   const [roomId,setRoomId]=useState(activeRooms[0]?.roomId||'');
   const [dateKey,setDateKey]=useState(draft.dateKey);
   const [start,setStart]=useState(timeText(draft.startMin));
   const [end,setEnd]=useState(timeText(Math.min(draft.startMin+60,18*60)));
+  const user=useCurrentUser();
   const [bookerName,setBookerName]=useState(''); const [attendees,setAttendees]=useState('2'); const [note,setNote]=useState('');
+  const [position,setPosition]=useState(''); const [department,setDepartment]=useState(user.department); const [phone,setPhone]=useState(''); const [title,setTitle]=useState(''); const [customLocation,setCustomLocation]=useState('');
   const [requestedFacilities,setRequestedFacilities]=useState<RequestFacility[]>([]); const [extraFurnitureCount,setExtraFurnitureCount]=useState('0'); const [otherFacility,setOtherFacility]=useState(''); const [termsAccepted,setTermsAccepted]=useState(false);
   useEffect(()=>{if(!roomId&&activeRooms.length)setRoomId(activeRooms[0]!.roomId);},[activeRooms,roomId]);
   const room=activeRooms.find((item)=>item.roomId===roomId);
+  const openLocation=isOpenLocationRoom(room);
   const { busy: busySlots, loading: checkingRoom } = useRoomAvailability(roomId, dateKey);
   const roomConflict = conflictingSlots({ startMin: asMinute(start), endMin: asMinute(end) }, busySlots).length > 0;
   const asMin=(value:string)=>Number(value.slice(0,2))*60+Number(value.slice(3,5));
@@ -116,15 +121,19 @@ function CalendarBookingDialog({draft,rooms,settings,busy,error,onClose,onTimeCh
   useEffect(()=>{onTimeChange({dateKey,startMin:asMin(start),endMin:asMin(end)});},[dateKey,start,end]);
   return <div className={`fixed inset-0 z-50 grid place-items-center bg-ink/25 p-4 lg:px-10 ${side==='left'?'lg:justify-items-start':'lg:justify-items-end'}`} onMouseDown={(event)=>{if(event.target===event.currentTarget&&!busy)onClose();}} onKeyDown={(event)=>{if(event.key==='Escape'&&!busy)onClose();}}>
     <section role="dialog" aria-modal="true" aria-labelledby="calendar-booking-title" className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card bg-surface shadow-overlay">
-      <form onSubmit={(event)=>{event.preventDefault();onSubmit({dateKey,startMin:asMin(start),endMin:asMin(end),roomId,bookerName,title:'',attendees:Number(attendees),note,requesterPosition:'',requesterPhone:'',requestedFacilities,extraFurnitureCount:Number(extraFurnitureCount),otherFacility,termsAccepted});}}>
+      <form onSubmit={(event)=>{event.preventDefault();onSubmit({dateKey,startMin:asMin(start),endMin:asMin(end),roomId,bookerName,title,department,customLocation:openLocation?customLocation:'',attendees:Number(attendees),note,requesterPosition:position,requesterPhone:phone,requestedFacilities,extraFurnitureCount:Number(extraFurnitureCount),otherFacility,termsAccepted});}}>
         <header className="flex items-start justify-between border-b border-line px-5 py-4"><div><h2 id="calendar-booking-title" className="text-lg font-semibold text-ink">จองห้องประชุม</h2><p className="mt-1 text-sm text-ink-muted">{dateText(dateKey)} · เริ่ม {start}</p></div><button type="button" aria-label="ปิดหน้าต่าง" onClick={onClose} className="grid size-10 place-items-center rounded-control text-ink-muted hover:bg-neutral-soft">×</button></header>
         <div className="space-y-4 p-5">
           {error&&<Alert tone="danger" title="จองไม่สำเร็จ">{error}</Alert>}
                     <div><label className={labelClass} htmlFor="calendar-booker-name">ชื่อผู้จอง</label><input autoFocus className={inputClass} id="calendar-booker-name" required maxLength={100} autoComplete="name" value={bookerName} onChange={(event)=>setBookerName(event.target.value)} placeholder="ชื่อ-นามสกุล ผู้จอง"/></div>
-          <div><label className={labelClass} htmlFor="calendar-room">ห้องประชุม</label><select className={inputClass} id="calendar-room" required value={roomId} onChange={(event)=>setRoomId(event.target.value)}>{activeRooms.map((item)=><option key={item.roomId} value={item.roomId}>{item.name} · {item.capacity} คน</option>)}</select>{room&&<p className="mt-1 text-xs text-ink-muted">{room.location} · จองได้ทุก {settings.slotMinutes} นาที</p>}</div>
+          <div className="grid gap-3 sm:grid-cols-2"><div><label className={labelClass} htmlFor="calendar-position">ตำแหน่ง</label><input className={inputClass} id="calendar-position" required maxLength={100} value={position} onChange={(event)=>setPosition(event.target.value)} placeholder="เช่น ครู"/></div><div><label className={labelClass} htmlFor="calendar-phone">หมายเลขโทรศัพท์</label><input className={inputClass} id="calendar-phone" type="tel" inputMode="tel" required maxLength={30} value={phone} onChange={(event)=>setPhone(event.target.value)} placeholder="เช่น 081-234-5678"/></div></div>
+          <div><label className={labelClass} htmlFor="calendar-department">หน่วยงาน / สาขาวิชา</label><input className={inputClass} id="calendar-department" required maxLength={100} value={department} onChange={(event)=>setDepartment(event.target.value)}/></div>
+          <div><label className={labelClass} htmlFor="calendar-title">เพื่อใช้ในการดำเนินงาน เรื่อง</label><input className={inputClass} id="calendar-title" required maxLength={200} value={title} onChange={(event)=>setTitle(event.target.value)}/></div>
+          <div><label className={labelClass} htmlFor="calendar-room">ห้องประชุม</label><select className={inputClass} id="calendar-room" required value={roomId} onChange={(event)=>setRoomId(event.target.value)}>{activeRooms.map((item)=><option key={item.roomId} value={item.roomId}>{item.name} · {item.capacity} คน</option>)}</select>{room&&!openLocation&&<p className="mt-1 text-xs text-ink-muted">รองรับประมาณ {room.capacity} คน · จองได้ทุก {settings.slotMinutes} นาที</p>}</div>
+          {openLocation&&<div><label className={labelClass} htmlFor="calendar-location">ระบุสถานที่</label><input className={inputClass} id="calendar-location" required maxLength={200} value={customLocation} onChange={(event)=>setCustomLocation(event.target.value)} placeholder="เช่น ลานกิจกรรมหน้าอาคาร 2"/></div>}
           <div className="grid grid-cols-3 gap-3"><div><label className={labelClass} htmlFor="calendar-date">วันที่</label><input className={inputClass} id="calendar-date" type="date" required value={dateKey} onChange={(event)=>setDateKey(event.target.value)}/></div><div><label className={labelClass} htmlFor="calendar-start">เริ่ม</label><TimeSelect className={inputClass} id="calendar-start" value={start} options={startTimeOptions(settings)} isDisabled={(minute)=>isStartBlocked(minute,settings.minBookingMinutes,busySlots)} onChange={(value)=>{setStart(value);setEnd(timeText(adjustEndTime(settings,asMin(value),asMin(end),busySlots)));}}/></div><div><label className={labelClass} htmlFor="calendar-end">สิ้นสุด</label><TimeSelect className={inputClass} id="calendar-end" value={end} options={endTimeOptions(settings,asMin(start))} isDisabled={(minute)=>isEndBlocked(asMin(start),minute,busySlots)} onChange={setEnd}/></div></div>
           <div><label className={labelClass} htmlFor="calendar-attendees">ผู้เข้าร่วม</label><input className={inputClass} id="calendar-attendees" type="number" inputMode="numeric" required min="1" max={room?.capacity||1000} value={attendees} onChange={(event)=>setAttendees(event.target.value)}/></div>
-          <RoomAvailability busy={busySlots} loading={checkingRoom} startMin={asMin(start)} endMin={asMin(end)} settings={settings} onPick={(startMin,endMin)=>{setStart(timeText(startMin));setEnd(timeText(endMin));}}/>
+          {!openLocation&&<RoomAvailability busy={busySlots} loading={checkingRoom} startMin={asMin(start)} endMin={asMin(end)} settings={settings} onPick={(startMin,endMin)=>{setStart(timeText(startMin));setEnd(timeText(endMin));}}/>}
           <fieldset><legend className={labelClass}>ครุภัณฑ์/อุปกรณ์/สิ่งอำนวยความสะดวกที่ขอใช้</legend><div className="grid gap-2 sm:grid-cols-2">{REQUEST_FACILITIES.map((key)=><label key={key} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-control border border-line px-3 text-sm transition-colors duration-150 has-[:checked]:border-ok-border has-[:checked]:bg-ok-soft has-[:checked]:font-medium has-[:checked]:text-ok"><input type="checkbox" checked={requestedFacilities.includes(key)} onChange={()=>setRequestedFacilities((current)=>current.includes(key)?current.filter((item)=>item!==key):[...current,key])}/>{REQUEST_FACILITY_LABEL_TH[key]}</label>)}</div><div className="mt-3 grid gap-3 sm:grid-cols-2"><div><label className={labelClass} htmlFor="calendar-furniture">โต๊ะ/เก้าอี้เพิ่มเติม (ตัว)</label><input className={inputClass} id="calendar-furniture" type="number" inputMode="numeric" min="0" max="500" value={extraFurnitureCount} onChange={(event)=>setExtraFurnitureCount(event.target.value)}/></div><div><label className={labelClass} htmlFor="calendar-other">อุปกรณ์อื่น ๆ</label><input className={inputClass} id="calendar-other" maxLength={300} value={otherFacility} onChange={(event)=>setOtherFacility(event.target.value)}/></div></div></fieldset>
           <div><label className={labelClass} htmlFor="calendar-note">รายละเอียดเพิ่มเติม</label><textarea className={`${inputClass} min-h-20 py-2`} id="calendar-note" maxLength={1000} value={note} onChange={(event)=>setNote(event.target.value)}/></div>
           <label className="flex cursor-pointer items-start gap-2 rounded-control border border-line p-3 text-sm leading-5 text-ink-muted transition-colors duration-150 has-[:checked]:border-ok-border has-[:checked]:bg-ok-soft has-[:checked]:font-medium has-[:checked]:text-ok"><input className="mt-1" type="checkbox" required checked={termsAccepted} onChange={(event)=>setTermsAccepted(event.target.checked)}/><span>ข้าพเจ้าจะดูแลรักษาทรัพย์สินของทางราชการ และปฏิบัติตามระเบียบของวิทยาลัยทุกประการ</span></label>
@@ -140,3 +149,11 @@ function monthItemClass(item: DemoBooking, rooms: DemoRoom[]): string {
   const color = roomColorOf(rooms.map((room) => room.roomId), item.roomId);
   return cn(color.soft, color.text, item.status === 'pending' && 'outline outline-1 -outline-offset-1 outline-dashed outline-current', ['cancelled', 'rejected'].includes(item.status) && 'line-through opacity-60');
 }
+
+/** ชื่อสถานที่ที่แสดง: ห้องในระบบ หรือสถานที่ที่ผู้ขอพิมพ์เองเมื่อเลือก "อื่น ๆ" */
+function placeName(booking: DemoBooking, rooms: DemoRoom[]): string {
+  const room = rooms.find((item) => item.roomId === booking.roomId);
+  if (isOpenLocationRoom(room)) return booking.customLocation || 'สถานที่อื่น';
+  return room?.name || 'ห้องประชุม';
+}
+

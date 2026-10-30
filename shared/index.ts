@@ -10,6 +10,7 @@ export * from './domain/status';
 export * from './domain/availability';
 export * from './domain/booking-rules';
 export * from './domain/utilization';
+export * from './domain/approval';
 export * from './schemas/settings';
 export * from './schemas/room';
 export * from './schemas/user';

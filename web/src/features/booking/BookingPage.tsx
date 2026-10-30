@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AirVent, CalendarDays, Check, Clock3, DoorOpen, Mic, Projector, Send, Users, Volume2, Wifi, type LucideIcon,
+  AirVent, CalendarDays, Check, Clock3, DoorOpen, MapPin, Mic, Projector, Send, Users, Volume2, Wifi, type LucideIcon,
 } from 'lucide-react';
 import { businessWindow } from '@shared/domain/booking-rules';
 import { conflictingSlots, isEndBlocked, isStartBlocked } from '@shared/domain/availability';
 import { addDaysToDateKey, dayOfWeekOfDateKey, toDateKey, toMinutesOfDay } from '@shared/time/bangkok';
-import { ROOM_EQUIPMENT_LABEL_TH } from '@shared/schemas/room';
+import { ROOM_EQUIPMENT_LABEL_TH, isOpenLocationRoom } from '@shared/schemas/room';
 import { REQUEST_FACILITIES, REQUEST_FACILITY_LABEL_TH, type RequestFacility } from '@shared/schemas/booking';
 import type { SystemSettings } from '@shared/schemas/settings';
 import { useApp, useCurrentUser } from '../../app/providers/AppProvider';
@@ -73,6 +73,11 @@ export function BookingPage() {
   const [start, setStart] = useState('09:00');
   const [end, setEnd] = useState('10:00');
   const [bookerName, setBookerName] = useState('');
+  const [position, setPosition] = useState('');
+  const [department, setDepartment] = useState(user.department);
+  const [phone, setPhone] = useState('');
+  const [title, setTitle] = useState('');
+  const [customLocation, setCustomLocation] = useState('');
   const [attendees, setAttendees] = useState('2');
   const [note, setNote] = useState('');
   const [requestedFacilities, setRequestedFacilities] = useState<RequestFacility[]>([]);
@@ -92,6 +97,8 @@ export function BookingPage() {
   }, [api, token]);
 
   const room = rooms.find((r) => r.roomId === roomId);
+  // ห้อง "อื่น ๆ": ผู้ขอระบุสถานที่เอง ไม่มีการตรวจเวลาซ้อน
+  const openLocation = isOpenLocationRoom(room);
   const band = (id: string) => ROOM_BANDS[Math.max(roomOrder.indexOf(id), 0) % ROOM_BANDS.length];
   const { busy: busySlots, loading: checkingRoom } = useRoomAvailability(roomId, dateKey);
   const startMin = asMinute(start);
@@ -118,19 +125,24 @@ export function BookingPage() {
 
   const capacity = room?.capacity ?? 0;
   const attendeeCount = Number(attendees) || 0;
-  const overCapacity = room !== undefined && attendeeCount > capacity;
+  const overCapacity = room !== undefined && !openLocation && attendeeCount > capacity;
   const dayClosed = !rules.bookableWeekdays.includes(dayOfWeekOfDateKey(dateKey));
 
   const missing = [
     roomId === '' && 'เลือกห้อง',
+    openLocation && customLocation.trim() === '' && 'ระบุสถานที่',
     roomConflict && 'เลือกเวลาที่ห้องว่าง',
     bookerName.trim() === '' && 'กรอกชื่อผู้จอง',
+    position.trim() === '' && 'ตำแหน่ง',
+    department.trim() === '' && 'หน่วยงาน',
+    phone.trim() === '' && 'เบอร์โทร',
+    title.trim() === '' && 'เรื่องที่ใช้ห้อง',
     !termsAccepted && 'ติ๊กยอมรับเงื่อนไข',
   ].filter((item): item is string => typeof item === 'string');
   const done = {
-    room: roomId !== '',
+    room: roomId !== '' && (!openLocation || customLocation.trim() !== ''),
     time: !roomConflict && !dayClosed,
-    booker: bookerName.trim() !== '' && attendeeCount > 0 && !overCapacity,
+    booker: [bookerName, position, department, phone, title].every((value) => value.trim() !== '') && attendeeCount > 0 && !overCapacity,
     terms: termsAccepted,
   };
 
@@ -140,8 +152,8 @@ export function BookingPage() {
     setError('');
     try {
       await api.createBooking(token, {
-        bookerName, title: '', roomId, dateKey, startMin, endMin, attendees: attendeeCount,
-        department: user.department, requesterPosition: '', requesterPhone: '', note, equipment: [],
+        bookerName, title, roomId, dateKey, startMin, endMin, attendees: attendeeCount,
+        department, requesterPosition: position, requesterPhone: phone, note, equipment: [], customLocation: openLocation ? customLocation : '',
         requestedFacilities, extraFurnitureCount: Number(extraFurnitureCount), otherFacility, termsAccepted,
       });
       nav('/my-bookings', { state: { success: 'ส่งคำขอจองเรียบร้อยแล้ว' } });
@@ -177,14 +189,14 @@ export function BookingPage() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-semibold text-ink">{item.name}</span>
-                        <span className="block truncate text-xs text-ink-muted">{item.location}</span>
+                        {item.location && <span className="block truncate text-xs text-ink-muted">{item.location}</span>}
                       </span>
                       <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center rounded-full border border-line text-transparent transition-colors duration-150 group-has-[:checked]:border-brand group-has-[:checked]:bg-brand group-has-[:checked]:text-ink-inverse">
                         <Check className="size-3.5" strokeWidth={3} />
                       </span>
                     </span>
                     <span className="mt-auto flex items-center gap-1.5 px-3.5 pb-3 text-xs text-ink-muted">
-                      <Users className="size-3.5 shrink-0" aria-hidden="true" /><span className="shrink-0">รองรับ {item.capacity} คน</span>
+                      {isOpenLocationRoom(item) ? <><MapPin className="size-3.5 shrink-0" aria-hidden="true" /><span>พิมพ์สถานที่ที่ต้องการเอง</span></> : <><Users className="size-3.5 shrink-0" aria-hidden="true" /><span className="shrink-0">รองรับประมาณ {item.capacity} คน</span></>}
                       {item.equipment.length > 0 && <span className="min-w-0 truncate">· มี{item.equipment.map((key) => ROOM_EQUIPMENT_LABEL_TH[key]).join(', ')}</span>}
                     </span>
                   </label>
@@ -192,6 +204,13 @@ export function BookingPage() {
               </div>
               {rooms.length === 0 && !error && <p className="py-6 text-center text-sm text-ink-muted">กำลังโหลดห้องประชุม…</p>}
             </fieldset>
+            {openLocation && (
+              <div className="mt-4">
+                <label className={labelClass} htmlFor="custom-location">ระบุสถานที่</label>
+                <input className={inputClass} id="custom-location" required maxLength={200} value={customLocation} onChange={(e) => setCustomLocation(e.target.value)} placeholder="เช่น ลานกิจกรรมหน้าอาคาร 2" />
+                <p className="mt-1 text-xs text-ink-subtle">สถานที่อื่นไม่มีตารางในระบบ จึงไม่ตรวจเวลาซ้อนให้ ผู้อนุมัติจะตรวจสอบอีกครั้ง</p>
+              </div>
+            )}
           </Section>
 
           <Section step={2} title="วันและเวลา" hint={thaiDate(dateKey, { dateStyle: 'full' })} done={done.time}>
@@ -273,7 +292,7 @@ export function BookingPage() {
               })}
             </div>
 
-            <div className="mt-5">
+            {!openLocation && <><div className="mt-5">
               <DayTimeline
                 busy={busySlots}
                 startMin={startMin}
@@ -288,20 +307,38 @@ export function BookingPage() {
             </div>
             <div className="mt-4">
               <RoomAvailability busy={busySlots} loading={checkingRoom} startMin={startMin} endMin={endMin} settings={rules} onPick={chooseTime} />
-            </div>
+            </div></>}
           </Section>
 
-          <Section step={3} title="ข้อมูลผู้จอง" done={done.booker}>
-            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_11rem]">
+          <Section step={3} title="ข้อมูลผู้ขอใช้" hint="ตามแบบคำขออนุญาตใช้ห้องประชุม" done={done.booker}>
+            <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className={labelClass} htmlFor="booker-name">ชื่อผู้จอง</label>
                 <input className={inputClass} id="booker-name" required maxLength={100} autoComplete="name" value={bookerName} onChange={(e) => setBookerName(e.target.value)} placeholder="ชื่อ-นามสกุล ผู้จอง" />
               </div>
               <div>
+                <label className={labelClass} htmlFor="position">ตำแหน่ง</label>
+                <input className={inputClass} id="position" required maxLength={100} autoComplete="organization-title" value={position} onChange={(e) => setPosition(e.target.value)} placeholder="เช่น ครู, หัวหน้าแผนกวิชา" />
+              </div>
+              <div>
+                <label className={labelClass} htmlFor="department">หน่วยงาน / สาขาวิชา</label>
+                <input className={inputClass} id="department" required maxLength={100} value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="เช่น แผนกวิชาการบัญชี" />
+              </div>
+              <div>
+                <label className={labelClass} htmlFor="phone">หมายเลขโทรศัพท์</label>
+                <input className={inputClass} id="phone" type="tel" inputMode="tel" required maxLength={30} autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="เช่น 081-234-5678" />
+              </div>
+            </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_11rem]">
+              <div>
+                <label className={labelClass} htmlFor="title">เพื่อใช้ในการดำเนินงาน เรื่อง</label>
+                <input className={inputClass} id="title" required maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="เช่น ประชุมครูประจำแผนกวิชา" />
+              </div>
+              <div>
                 <label className={labelClass} htmlFor="attendees">ผู้เข้าร่วม (คน)</label>
                 <input className={cn(inputClass, overCapacity && 'border-warn')} id="attendees" type="number" inputMode="numeric" required min="1" max={capacity || 1000} value={attendees} onChange={(e) => setAttendees(e.target.value)} aria-describedby="attendees-hint" />
                 <p id="attendees-hint" className={cn('mt-1 text-xs', overCapacity ? 'font-medium text-warn' : 'text-ink-subtle')}>
-                  {room ? (overCapacity ? `เกินความจุห้อง (${capacity} คน)` : `ห้องนี้รับได้ ${capacity} คน`) : ' '}
+                  {room && !openLocation ? (overCapacity ? `เกินความจุห้อง (${capacity} คน)` : `ห้องนี้รับได้ประมาณ ${capacity} คน`) : 'จำนวนโดยประมาณ'}
                 </p>
               </div>
             </div>
@@ -352,8 +389,8 @@ export function BookingPage() {
             <div className={`relative overflow-hidden bg-gradient-to-br px-5 py-4 text-ink-inverse ${room ? band(room.roomId) : 'from-blue-700 to-blue-950'}`}>
               <span aria-hidden="true" className="absolute -right-8 -top-10 size-32 rounded-full bg-white/10" />
               <p className="text-sm text-ink-inverse/80">สรุปการจอง</p>
-              <p className="mt-0.5 text-lg font-semibold leading-snug">{room?.name ?? 'ยังไม่ได้เลือกห้อง'}</p>
-              {room && <p className="text-sm text-ink-inverse/80">{room.location}</p>}
+              <p className="mt-0.5 text-lg font-semibold leading-snug">{openLocation ? customLocation.trim() || 'สถานที่อื่น (ยังไม่ระบุ)' : room?.name ?? 'ยังไม่ได้เลือกห้อง'}</p>
+              {title.trim() && <p className="mt-0.5 line-clamp-2 text-sm text-ink-inverse/85">เรื่อง {title.trim()}</p>}
             </div>
             <dl className="space-y-3 px-5 py-4 text-sm">
               <SummaryRow icon={CalendarDays} label="วันที่">{thaiDate(dateKey, { dateStyle: 'long' })}</SummaryRow>
@@ -363,7 +400,7 @@ export function BookingPage() {
               </SummaryRow>
               <SummaryRow icon={Users} label="ผู้เข้าร่วม">
                 <span className={cn(overCapacity && 'text-warn')}>{attendeeCount} คน</span>
-                {room && <span className="text-ink-muted"> จาก {capacity} ที่นั่ง</span>}
+                {room && !openLocation && <span className="text-ink-muted"> จาก {capacity} ที่นั่ง</span>}
               </SummaryRow>
               {requestedFacilities.length > 0 && (
                 <SummaryRow icon={Projector} label="ขอใช้">
@@ -377,7 +414,7 @@ export function BookingPage() {
             {room?.name ?? 'เลือกห้อง'} · {thaiDate(dateKey, { day: 'numeric', month: 'short' })} · <span className={cn(roomConflict && 'text-danger')}>{start}–{end} น.</span>
           </p>
           <p className={cn('mt-0.5 text-xs lg:mt-0 lg:border-t lg:border-line lg:px-5 lg:py-3', missing.length ? 'text-warn' : 'text-ok')}>
-            {missing.length ? `ยังขาด: ${missing.join(' · ')}` : rules.approvalRequired ? 'พร้อมส่ง หลังส่งรอผู้ดูแลอนุมัติ ดูสถานะได้ที่รายการจองของฉัน' : 'พร้อมส่ง ส่งแล้วได้ห้องทันที'}
+            {missing.length ? `ยังขาด: ${missing.join(' · ')}` : rules.approvalRequired ? 'พร้อมส่ง คำขอจะผ่านการอนุมัติ 3 ขั้น ติดตามได้ที่รายการจองของฉัน' : 'พร้อมส่ง ส่งแล้วได้ห้องทันที'}
           </p>
           <div className="mt-2 flex gap-3 lg:mt-0 lg:flex-col-reverse lg:gap-2 lg:px-5 lg:pb-5">
             <Button variant="secondary" onClick={() => nav(-1)}>กลับ</Button>

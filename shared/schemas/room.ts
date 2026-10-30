@@ -82,3 +82,28 @@ export function validateRoomInput(raw: unknown): ValidationResult<RoomInput> {
 
   return check.result(value);
 }
+
+/**
+ * ห้อง "อื่น ๆ (ระบุสถานที่)" — ผู้ขอพิมพ์สถานที่เอง แต่ละรายการอาจเป็นคนละที่
+ * จึงไม่ตรวจเวลาชนกัน และต้องกรอก customLocation ทุกครั้ง
+ */
+export const OPEN_LOCATION_ROOM_CODE = 'OTHER';
+
+export function isOpenLocationRoom(room: { code?: unknown } | null | undefined): boolean {
+  return String(room?.code ?? '').trim().toUpperCase() === OPEN_LOCATION_ROOM_CODE;
+}
+
+/**
+ * ห้องประชุมของวิทยาลัยตามแบบคำขอ ใช้สร้างชีต Rooms ครั้งแรก (seedRooms) และข้อมูลตัวอย่าง
+ * ความจุเป็นค่าประมาณเริ่มต้น — ผู้ดูแลแก้ตัวเลขจริงในชีต Rooms ได้ภายหลัง
+ */
+export const COLLEGE_ROOMS: readonly { code: string; name: string; capacity: number }[] = [
+  { code: 'R01', name: 'หอประชุมอดิเรกสาร', capacity: 300 },
+  { code: 'R02', name: 'ห้องประชุมสักทอง', capacity: 40 },
+  { code: 'R03', name: 'ห้องประชุมหน้าห้องผู้อำนวยการ', capacity: 20 },
+  { code: 'R04', name: 'ห้องประชุม (กาแฟ)', capacity: 15 },
+  { code: 'R05', name: 'อาคารโดมเอนกประสงค์', capacity: 500 },
+  { code: 'R06', name: 'ห้องคอมพิวเตอร์กลาง (ห้องโสต)', capacity: 40 },
+  { code: OPEN_LOCATION_ROOM_CODE, name: 'อื่น ๆ (ระบุสถานที่)', capacity: 1000 },
+];
+

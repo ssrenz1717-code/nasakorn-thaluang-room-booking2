@@ -85,11 +85,11 @@ describe('หน้าภาพรวม', () => {
   it('ตัวเลขบนการ์ดสรุปนับขึ้นไปจนถึงค่าจริง', async () => {
     await openApp();
 
-    // ข้อมูลตั้งต้นมีรายการที่อนุมัติแล้ว 4 รายการ ผู้เข้าร่วม 12+5+28+3 = 48 คน — ตัวเลขที่มองเห็น (aria-hidden) ต้องหยุดที่ 48
+    // ข้อมูลตั้งต้นมีรายการที่อนุมัติแล้ว 4 รายการ ผู้เข้าร่วม 120+12+30+10 = 172 คน — ตัวเลขที่มองเห็น (aria-hidden) ต้องหยุดที่ 172
     const label = await screen.findByText('ผู้เข้าใช้รวม');
     const card = label.parentElement!;
     await waitFor(
-      () => expect(card.querySelector('strong [aria-hidden="true"]')?.textContent).toBe('48'),
+      () => expect(card.querySelector('strong [aria-hidden="true"]')?.textContent).toBe('172'),
       { timeout: 3000 },
     );
   });
@@ -122,13 +122,12 @@ describe('เมนูและการเข้าถึงหน้าต่�
     const { user, nav } = await openApp();
 
     await goTo(user, nav, 'รายการจองของฉัน');
-    // ข้อมูลตัวอย่าง: ผู้ดูแลมีการจองของตัวเอง 1 รายการ ที่เหลือเป็นของพนักงานและฝ่ายบุคคล
-    await waitFor(() => expect(screen.getByText('อ.สมชาย ใจดี')).toBeDefined(), {
+    // ข้อมูลตัวอย่าง: ผู้ดูแลมีการจองของตัวเอง 2 รายการ ที่เหลือเป็นของบัญชีอื่น
+    await waitFor(() => expect(screen.getByText('ประชุมครูและบุคลากรประจำเดือน')).toBeDefined(), {
       timeout: 3000,
     });
-    // ของคนอื่นต้องไม่โผล่ และต้องแสดงชื่อผู้จอง ไม่ใช่หัวข้อการประชุม
-    expect(screen.queryByText('นางสาวกนกวรรณ ศรีสุข')).toBeNull();
-    expect(screen.queryByText('ประชุมผู้บริหารประจำสัปดาห์')).toBeNull();
+    // ของคนอื่นต้องไม่โผล่
+    expect(screen.queryByText('ประชุมแผนกวิชาการบัญชี')).toBeNull();
   });
 
   it('ปฏิทินแสดงเวลาแบบ 24 ชั่วโมง ไม่ใช่ AM/PM', async () => {
@@ -143,7 +142,7 @@ describe('เมนูและการเข้าถึงหน้าต่�
     const { user, nav } = await openApp();
 
     await goTo(user, nav, 'ห้องประชุม');
-    await waitFor(() => expect(screen.getByText(/ห้องประชุมใหญ่/)).toBeDefined(), {
+    await waitFor(() => expect(screen.getByText(/หอประชุมอดิเรกสาร/)).toBeDefined(), {
       timeout: 3000,
     });
   });
@@ -177,14 +176,18 @@ describe('สิทธิ์ผู้ใช้', () => {
 });
 
 describe('จองห้องจริงตั้งแต่ต้นจนจบ', () => {
-  it('ฟอร์มไม่มีช่องหัวข้อ ตำแหน่ง และเบอร์โทรแล้ว', async () => {
+  it('ฟอร์มมีช่องครบตามแบบคำขอ และมีห้องจริง 6 ห้องกับ "อื่น ๆ"', async () => {
     const { user, nav } = await openApp();
     await goTo(user, nav, 'จองห้องประชุม');
 
     expect(await screen.findByLabelText('ชื่อผู้จอง')).toBeDefined();
-    expect(screen.queryByLabelText(/เพื่อใช้ดำเนินงาน/)).toBeNull();
-    expect(screen.queryByLabelText('ตำแหน่ง')).toBeNull();
-    expect(screen.queryByLabelText('หมายเลขโทรศัพท์')).toBeNull();
+    for (const label of ['ตำแหน่ง', 'หน่วยงาน / สาขาวิชา', 'หมายเลขโทรศัพท์', 'เพื่อใช้ในการดำเนินงาน เรื่อง']) {
+      expect((screen.getByLabelText(label) as HTMLInputElement).required).toBe(true);
+    }
+    await waitFor(() => expect(screen.getAllByRole('radio')).toHaveLength(7));
+    // เลือก "อื่น ๆ" แล้วต้องมีช่องระบุสถานที่
+    await user.click(screen.getByText('อื่น ๆ (ระบุสถานที่)'));
+    expect((await screen.findByLabelText('ระบุสถานที่') as HTMLInputElement).required).toBe(true);
   });
 
   it('จองด้วยชื่อผู้จอง แล้วรายการยังอยู่หลังรีเฟรชหน้า', async () => {
@@ -196,6 +199,9 @@ describe('จองห้องจริงตั้งแต่ต้นจน�
       expect(screen.getAllByRole('radio').some((radio) => (radio as HTMLInputElement).checked)).toBe(true),
     );
     await user.type(await screen.findByLabelText('ชื่อผู้จอง'), 'นายทดสอบ ระบบจอง');
+    await user.type(screen.getByLabelText('ตำแหน่ง'), 'ครู');
+    await user.type(screen.getByLabelText('หมายเลขโทรศัพท์'), '081-234-5678');
+    await user.type(screen.getByLabelText('เพื่อใช้ในการดำเนินงาน เรื่อง'), 'ประชุมทดสอบระบบ');
     // วันพุธในอนาคต ไม่ชนกับข้อมูลตั้งต้น และไม่ขึ้นกับว่าเทสรันวันไหน
     fireEvent.change(screen.getByLabelText('วันที่'), { target: { value: '2030-01-02' } });
     fireEvent.change(screen.getByLabelText('เริ่ม'), { target: { value: '13:00' } });
@@ -203,14 +209,14 @@ describe('จองห้องจริงตั้งแต่ต้นจน�
     await user.click(screen.getByLabelText(/ข้าพเจ้าจะดูแลรักษาทรัพย์สิน/));
     await user.click(screen.getByRole('button', { name: /ส่งคำขอจอง/ }));
 
-    expect(await screen.findByText('นายทดสอบ ระบบจอง', {}, { timeout: 3000 })).toBeDefined();
+    expect(await screen.findByText('ประชุมทดสอบระบบ', {}, { timeout: 3000 })).toBeDefined();
 
     // จำลองการรีเฟรช: ถอดแอปออกทั้งหมดแล้วเปิดใหม่ โดยไม่ล้าง localStorage
     cleanup();
     window.location.hash = '';
     const again = await openApp();
     await goTo(again.user, again.nav, 'รายการจองของฉัน');
-    expect(await screen.findByText('นายทดสอบ ระบบจอง', {}, { timeout: 3000 })).toBeDefined();
+    expect(await screen.findByText('ประชุมทดสอบระบบ', {}, { timeout: 3000 })).toBeDefined();
   }, 15_000);
 });
 
@@ -252,19 +258,35 @@ describe('เมนูซ้าย: ย่อได้ และมีป้า�
     expect(sidebarPanel().dataset.expanded).toBe('true');
   });
 
-  it('ผู้ดูแลเห็นจำนวนรออนุมัติบนเมนู และหายเมื่ออนุมัติครบ', async () => {
+  it('อนุมัติ 3 ขั้นคนละบัญชี: ตรวจห้องแล้วเด้งไปผู้รับรอง แล้วไปผู้อนุมัติ', async () => {
     const { user, nav } = await openApp();
+    const switchTo = async (name: string) => {
+      await user.click(screen.getByRole('button', { expanded: false, name: /ผู้ดูแลระบบ|นาย/ }));
+      await user.click(screen.getByRole('menuitemradio', { name: new RegExp(name) }));
+      await waitFor(() => expect(screen.getByRole('button', { expanded: false, name: new RegExp(name) })).toBeDefined(), { timeout: 3000 });
+    };
 
-    // ข้อมูลตั้งต้นมีคำขอรออนุมัติ 1 รายการ
-    const approvals = await within(nav).findByRole('link', { name: /^รออนุมัติ.*มี 1 รายการ/ }, { timeout: 3000 });
-    await user.click(approvals);
-    await user.click(await screen.findByRole('button', { name: 'อนุมัติ' }, { timeout: 3000 }));
+    // ผู้ดูแลเห็นคำขอที่ค้างทุกขั้น (ตั้งต้น 2 รายการ: รอขั้น 1 และรอขั้น 2) แต่ลงนามแทนไม่ได้
+    await within(nav).findByRole('link', { name: /^อนุมัติการใช้ห้อง.*มี 2 รายการ/ }, { timeout: 3000 });
 
-    await waitFor(
-      () => expect(within(nav).getByRole('link', { name: 'รออนุมัติ' })).toBeDefined(),
-      { timeout: 3000 },
-    );
-  });
+    // ขั้น 1: เจ้าหน้าที่ตรวจห้องเห็นเฉพาะของตัวเอง 1 รายการ
+    await switchTo('นายวัชรพงศ์ โสภา');
+    await user.click(await within(nav).findByRole('link', { name: /^อนุมัติการใช้ห้อง.*มี 1 รายการ/ }, { timeout: 3000 }));
+    await user.click(await screen.findByRole('button', { name: 'ห้องพร้อม ส่งต่อผู้รับรอง' }, { timeout: 3000 }));
+    await waitFor(() => expect(within(nav).getByRole('link', { name: 'อนุมัติการใช้ห้อง' })).toBeDefined(), { timeout: 3000 });
+
+    // ขั้น 2: ผู้รับรองตอนนี้มี 2 รายการ (รายการที่เพิ่งผ่านขั้น 1 + รายการที่รออยู่แล้ว)
+    await switchTo('นายเอกราช เขียวทอง');
+    await within(nav).findByRole('link', { name: /^อนุมัติการใช้ห้อง.*มี 2 รายการ/ }, { timeout: 3000 });
+    const endorse = await screen.findAllByRole('button', { name: 'รับรอง ส่งต่อผู้อนุมัติ' }, { timeout: 3000 });
+    await user.click(endorse[0]!);
+    await within(nav).findByRole('link', { name: /^อนุมัติการใช้ห้อง.*มี 1 รายการ/ }, { timeout: 3000 });
+
+    // ขั้น 3: ผู้อนุมัติกดแล้วรายการนั้นยืนยันแล้ว
+    await switchTo('นายชาตรี เริงชัยภูมิ');
+    await user.click(await screen.findByRole('button', { name: 'อนุมัติการใช้ห้อง' }, { timeout: 3000 }));
+    await waitFor(() => expect(within(nav).getByRole('link', { name: 'อนุมัติการใช้ห้อง' })).toBeDefined(), { timeout: 3000 });
+  }, 30_000);
 });
 
 describe('มือถือ: เมนูด้านล่าง', () => {
@@ -283,12 +305,12 @@ describe('มือถือ: เมนูด้านล่าง', () => {
     const bar = screen.getByRole('navigation', { name: 'เมนูด้านล่าง' });
 
     // ป้ายรออนุมัติต้องโผล่ที่ปุ่มเพิ่มเติมด้วย เพราะเมนูรออนุมัติอยู่ข้างใน
-    const more = await within(bar).findByRole('button', { name: /เพิ่มเติม.*มี 1 รายการรออนุมัติ/ }, { timeout: 3000 });
+    const more = await within(bar).findByRole('button', { name: /เพิ่มเติม.*มี 2 รายการรออนุมัติ/ }, { timeout: 3000 });
     await user.click(more);
 
     const sheet = screen.getByRole('dialog', { name: 'เมนูเพิ่มเติม' });
     expect(within(sheet).getByRole('link', { name: 'ห้องประชุม' })).toBeDefined();
-    expect(within(sheet).getByRole('link', { name: /^รออนุมัติ.*มี 1 รายการ/ })).toBeDefined();
+    expect(within(sheet).getByRole('link', { name: /^อนุมัติการใช้ห้อง.*มี 2 รายการ/ })).toBeDefined();
     expect(within(sheet).getByRole('link', { name: 'พิมพ์แบบฟอร์ม A4' })).toBeDefined();
 
     await user.keyboard('{Escape}');
@@ -410,7 +432,7 @@ describe('ส่วนที่เพิ่มตามเช็กลิสต�
     await waitFor(() => expect(exportButton.textContent).not.toContain('(0 รายการ)'));
     const total = Number(/\((\d+) รายการ\)/.exec(exportButton.textContent ?? '')?.[1]);
 
-    await user.click(screen.getByRole('button', { name: 'ห้องประชุมย่อย 1' }));
+    await user.click(screen.getByRole('button', { name: 'ห้องประชุมสักทอง' }));
     const byRoom = Number(/\((\d+) รายการ\)/.exec(exportButton.textContent ?? '')?.[1]);
     expect(byRoom).toBeGreaterThan(0);
     expect(byRoom).toBeLessThan(total);

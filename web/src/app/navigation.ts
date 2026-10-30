@@ -25,7 +25,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/calendar', label: 'ปฏิทินการจอง', icon: CalendarDays, mobile: 'bar' },
   { path: '/my-bookings', label: 'รายการจองของฉัน', icon: ClipboardList, mobile: 'bar' },
   { path: '/rooms', label: 'ห้องประชุม', icon: DoorOpen },
-  { path: '/approvals', label: 'รออนุมัติ', icon: ClipboardCheck, roles: ['admin'] },
+  { path: '/approvals', label: 'อนุมัติการใช้ห้อง', icon: ClipboardCheck, roles: ['admin', 'inspector', 'endorser', 'director'] },
   { path: '/reports', label: 'พิมพ์แบบฟอร์ม A4', icon: ClipboardList },
 ];
 

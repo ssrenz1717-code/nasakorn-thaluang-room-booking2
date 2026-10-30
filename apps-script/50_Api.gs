@@ -101,7 +101,8 @@ function apiHandlers_() {
     availability: function (payload, token) { return roomAvailability_(authenticate_(token), payload || {}); },
     createBooking: function (payload, token) { return createBooking_(authenticate_(token), payload); },
     cancelBooking: function (payload, token) { return cancelBooking_(authenticate_(token), payload || {}); },
-    decideBooking: function (payload, token) { return decideBooking_(requireAdmin_(token), payload || {}); },
+    // ผู้ลงนามแต่ละขั้น (ไม่ใช่ admin) — decideBooking_ ตรวจว่าเป็นขั้นของคนนี้หรือไม่
+    decideBooking: function (payload, token) { return decideBooking_(authenticate_(token), payload || {}); },
     announcements: function (payload, token) { return listAnnouncements_(authenticate_(token)); },
     saveAnnouncement: function (payload, token) { return saveAnnouncement_(requireAdmin_(token), payload || {}); },
     archiveAnnouncement: function (payload, token) { return archiveAnnouncement_(requireAdmin_(token), payload || {}); },

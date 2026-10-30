@@ -39,6 +39,9 @@ function setupSystem() {
   // 3) ชีตทั้งหมด
   log.push(...migrateSheets());
 
+  // 3.1) ห้องประชุมของวิทยาลัย (เฉพาะตอนชีต Rooms ยังว่าง)
+  log.push(seedRooms());
+
   // 4) ค่าตั้งค่าเริ่มต้น (เขียนเฉพาะตอนชีตว่าง จะไม่ทับค่าที่ผู้ดูแลแก้ไว้)
   const settingsSheet = getSheet_(Domain.SHEET_SETTINGS);
   if (settingsSheet.getLastRow() < 2) {
@@ -66,6 +69,23 @@ function setupSystem() {
   const report = log.join('\n');
   console.log(report);
   return report;
+}
+
+/**
+ * ใส่ห้องประชุม 6 ห้อง + "อื่น ๆ" ลงชีต Rooms ถ้ายังไม่มีห้องเลย — ไม่ทับห้องที่ผู้ดูแลแก้ไว้
+ * แก้ความจุ/สถานที่/อุปกรณ์จริงในชีตได้ภายหลัง
+ */
+function seedRooms() {
+  if (readAll_(Domain.SHEET_ROOMS).objects.length > 0) return 'มีห้องประชุมอยู่แล้ว ไม่เพิ่มซ้ำ';
+  const now = nowIso_();
+  appendObjects_(Domain.SHEET_ROOMS, Domain.COLLEGE_ROOMS.map(function (room) {
+    return {
+      roomId: room.code, code: room.code, name: room.name, description: '', location: '',
+      capacity: room.capacity, equipment: '', imageUrl: '', status: 'active', createdAt: now, updatedAt: now,
+    };
+  }));
+  bumpDataVersion_();
+  return `เพิ่มห้องประชุม ${Domain.COLLEGE_ROOMS.length} รายการ (แก้ความจุจริงในชีต Rooms)`;
 }
 
 /**

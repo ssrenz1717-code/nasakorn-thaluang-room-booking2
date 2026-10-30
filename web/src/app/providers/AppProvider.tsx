@@ -14,6 +14,8 @@ import { ApiError, type SessionUser } from '../../lib/api/types';
 import { readLocal, removeLocal, writeLocal } from '../../lib/storage';
 
 const TOKEN_KEY = 'mrb.session.token';
+/** บัญชีตัวอย่างที่เลือกไว้ในโหมดข้อมูลในเบราว์เซอร์ — รีเฟรชแล้วยังเป็นคนเดิม */
+const DEMO_ACCOUNT_KEY = 'mrb.demo.account';
 
 type Phase = 'booting' | 'anonymous' | 'ready';
 
@@ -31,6 +33,8 @@ interface AppState {
   bootError: string | null;
   signInWithGoogle(idToken: string): Promise<void>;
   signInDemo(role: 'admin' | 'staff'): Promise<void>;
+  /** โหมดข้อมูลในเบราว์เซอร์: สลับไปเป็นบัญชีตัวอย่างอื่น (ใช้ลองอนุมัติ 3 ขั้นทีละคน) */
+  switchDemoAccount(email: string): Promise<void>;
   signOut(): void;
   retryBoot(): void;
 }
@@ -84,7 +88,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       let cancelled = false;
       setPhase('booting');
       api
-        .loginDemo('admin')
+        .loginDemo('admin', readLocal(DEMO_ACCOUNT_KEY) ?? undefined)
         .then((login) => api.bootstrap(login.token).then((result) => ({ login, result })))
         .then(({ login, result }) => {
           if (cancelled) return;
@@ -154,6 +158,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [api, applyBootstrap],
   );
 
+  const switchDemoAccount = useCallback(
+    async (email: string) => {
+      const result = await api.loginDemo('admin', email);
+      const boot = await api.bootstrap(result.token);
+      writeLocal(DEMO_ACCOUNT_KEY, email);
+      setToken(result.token);
+      applyBootstrap(boot);
+    },
+    [api, applyBootstrap],
+  );
+
   const signOut = useCallback(() => {
     removeLocal(TOKEN_KEY);
     setToken('');
@@ -182,6 +197,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       bootError,
       signInWithGoogle,
       signInDemo,
+      switchDemoAccount,
       signOut,
       retryBoot,
     }),
@@ -198,6 +214,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       bootError,
       signInWithGoogle,
       signInDemo,
+      switchDemoAccount,
       signOut,
       retryBoot,
     ],

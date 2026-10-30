@@ -1,12 +1,26 @@
 import { Check, type ValidationResult, asRecord } from '../validate/check';
 
-export const USER_ROLES = ['admin', 'staff'] as const;
+/**
+ * staff = ผู้ใช้ทั่วไป (ครู/บุคลากร) จองห้องได้
+ * inspector / endorser / director = ผู้ลงนามอนุมัติขั้นที่ 1 / 2 / 3 (ดู domain/approval.ts)
+ * admin = ผู้ดูแลระบบ จัดการประกาศและดูภาพรวม แต่ไม่ได้ลงนามแทนผู้อนุมัติ
+ */
+export const USER_ROLES = ['admin', 'staff', 'inspector', 'endorser', 'director'] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
 export const USER_ROLE_LABEL_TH: Record<UserRole, string> = {
   admin: 'ผู้ดูแลระบบ',
-  staff: 'พนักงาน',
+  staff: 'ผู้ใช้งาน',
+  inspector: 'เจ้าหน้าที่ตรวจห้อง',
+  endorser: 'ผู้รับรอง',
+  director: 'ผู้อนุมัติ',
 };
+
+/** ค่า role จากชีต Users ที่สะกดผิดหรือว่าง ให้เป็นผู้ใช้ทั่วไป (สิทธิ์ต่ำสุด) เสมอ */
+export function normalizeUserRole(raw: unknown): UserRole {
+  const value = String(raw ?? '').trim();
+  return (USER_ROLES as readonly string[]).includes(value) ? (value as UserRole) : 'staff';
+}
 
 export const USER_STATUSES = ['active', 'disabled'] as const;
 export type UserStatus = (typeof USER_STATUSES)[number];

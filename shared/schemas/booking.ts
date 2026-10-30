@@ -21,7 +21,7 @@ export const REQUEST_FACILITY_LABEL_TH: Record<RequestFacility, string> = {
 export interface BookingRequest {
   /** ชื่อผู้จองที่จะแสดงในปฏิทินและพิมพ์ลงแบบฟอร์ม */
   bookerName: string;
-  /** หัวข้อการประชุม — ไม่บังคับแล้ว ฟอร์มใช้ชื่อผู้จองแทน */
+  /** เพื่อใช้ในการดำเนินงาน เรื่อง (หัวข้อ) ตามแบบคำขอ */
   title: string;
   roomId: string;
   dateKey: string;
@@ -37,6 +37,8 @@ export interface BookingRequest {
   extraFurnitureCount: number;
   otherFacility: string;
   termsAccepted: boolean;
+  /** สถานที่ที่ผู้ขอระบุเอง เมื่อเลือกห้อง "อื่น ๆ" (ห้องอื่นเป็นค่าว่าง) */
+  customLocation: string;
 }
 
 export function validateBookingRequest(raw: unknown): ValidationResult<BookingRequest> {
@@ -56,7 +58,7 @@ export function validateBookingRequest(raw: unknown): ValidationResult<BookingRe
 
   const value: BookingRequest = {
     bookerName: check.string('bookerName', input.bookerName, { label: 'ชื่อผู้จอง', max: 100 }),
-    title: check.string('title', input.title, { label: 'หัวข้อการประชุม', max: 200, fallback: '' }),
+    title: check.string('title', input.title, { label: 'เรื่องที่ใช้ดำเนินงาน', min: 1, max: 200 }),
     roomId: check.string('roomId', input.roomId, { label: 'ห้องประชุม' }),
     dateKey: check.string('dateKey', input.dateKey, {
       label: 'วันที่',
@@ -70,15 +72,17 @@ export function validateBookingRequest(raw: unknown): ValidationResult<BookingRe
       min: 1,
     }),
     department: check.string('department', input.department, {
-      label: 'แผนก',
+      label: 'หน่วยงาน / สาขาวิชา',
+      min: 1,
       max: 100,
-      fallback: '',
     }),
     requesterPosition: check.string('requesterPosition', input.requesterPosition, {
-      label: 'ตำแหน่ง', max: 100, fallback: '',
+      label: 'ตำแหน่ง', min: 1, max: 100,
     }),
+    // เบอร์มือถือ เบอร์โต๊ะ หรือเบอร์ภายใน (เช่น "ต่อ 123") — ตรวจแค่ว่าเป็นตัวเลขกับเครื่องหมายที่ใช้เขียนเบอร์
     requesterPhone: check.string('requesterPhone', input.requesterPhone, {
-      label: 'หมายเลขโทรศัพท์', max: 30, fallback: '',
+      label: 'หมายเลขโทรศัพท์', min: 3, max: 30,
+      pattern: /^[0-9+()\-.\s]*(?:ต่อ\s*[0-9]+)?$/, patternMessage: 'หมายเลขโทรศัพท์ใส่ได้เฉพาะตัวเลข เช่น 081-234-5678 หรือ ต่อ 123',
     }),
     note: check.string('note', input.note, {
       label: 'รายละเอียดเพิ่มเติม',
@@ -97,6 +101,7 @@ export function validateBookingRequest(raw: unknown): ValidationResult<BookingRe
     otherFacility: check.string('otherFacility', input.otherFacility, {
       label: 'อุปกรณ์อื่น ๆ', max: 300, fallback: '',
     }),
+    customLocation: check.string('customLocation', input.customLocation, { label: 'สถานที่ที่ระบุเอง', max: 200, fallback: '' }),
     termsAccepted: check.boolean('termsAccepted', input.termsAccepted, {
       label: 'การยอมรับเงื่อนไข', fallback: false,
     }),
