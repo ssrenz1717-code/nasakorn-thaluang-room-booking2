@@ -109,7 +109,9 @@ function seedAccounts() {
       log.push(`มีบัญชี ${account.username} อยู่แล้ว`);
       return;
     }
-    const pin = randomPin_();
+    let pin = randomPin_();
+    // PIN ต้องไม่ซ้ำกันทั้งระบบ (ใช้เข้าระบบได้โดยไม่ต้องใส่ชื่อ)
+    while (readAll_(Domain.SHEET_USERS).objects.some(function (row) { return pinMatches_(row, pin); })) pin = randomPin_();
     const password = randomPassword_();
     appendObject_(Domain.SHEET_USERS, Object.assign({
       username: account.username, displayName: account.displayName, department: account.department,

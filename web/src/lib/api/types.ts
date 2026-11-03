@@ -23,12 +23,6 @@ export interface AdminUser extends SessionUser {
   createdAt: string;
 }
 
-/** ผลขั้นที่ 1 (รหัสผ่านถูก) — ตั๋วรอใส่ PIN ใช้ได้ไม่กี่นาที */
-export interface PasswordStepResult {
-  challenge: string;
-  displayName: string;
-}
-
 export interface LoginResult {
   token: string;
   user: SessionUser;

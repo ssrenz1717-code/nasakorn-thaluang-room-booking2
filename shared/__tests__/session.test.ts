@@ -4,10 +4,8 @@ import {
   type HmacFn,
   type SessionPayload,
   constantTimeEquals,
-  createPinChallenge,
   createSessionToken,
   sessionExpiryFrom,
-  verifyPinChallenge,
   verifySessionToken,
 } from '../auth/session';
 
@@ -113,19 +111,3 @@ describe('session token', () => {
   });
 });
 
-describe('ตั๋วรอใส่ PIN (ขั้นที่ 2 ของการเข้าสู่ระบบ)', () => {
-  const ticket = () => createPinChallenge({ username: 'shoyu', tokenVersion: 2, expiresAt: NOW + 60_000 }, SECRET, hmac);
-
-  it('ตรวจกลับได้ชื่อผู้ใช้และ tokenVersion เดิม', () => {
-    expect(verifyPinChallenge(ticket(), SECRET, hmac, NOW)).toEqual({ ok: true, username: 'shoyu', tokenVersion: 2 });
-  });
-  it('หมดอายุแล้วใช้ไม่ได้ และแก้ชื่อผู้ใช้ในตั๋วไม่ได้', () => {
-    expect(verifyPinChallenge(ticket(), SECRET, hmac, NOW + 60_000).ok).toBe(false);
-    expect(verifyPinChallenge(ticket().replace('|shoyu|', '|chatree|'), SECRET, hmac, NOW).ok).toBe(false);
-  });
-  it('เอาตั๋วไปใช้เป็น session ไม่ได้ และเอา session มาใช้เป็นตั๋วไม่ได้', () => {
-    expect(verifySessionToken(ticket(), SECRET, hmac, NOW).ok).toBe(false);
-    const session = createSessionToken({ email: 'shoyu', role: 'admin', tokenVersion: 2, expiresAt: NOW + 60_000 }, SECRET, hmac);
-    expect(verifyPinChallenge(session, SECRET, hmac, NOW).ok).toBe(false);
-  });
-});

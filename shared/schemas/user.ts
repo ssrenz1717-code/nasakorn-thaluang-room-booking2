@@ -51,7 +51,7 @@ export function validateUserProfileInput(raw: unknown): ValidationResult<UserPro
   });
 }
 
-/* ---------- บัญชีผู้ใช้ (ชื่อผู้ใช้ + รหัสผ่าน แล้วยืนยัน PIN อีกหน้า) ---------- */
+/* ---------- บัญชีผู้ใช้ (เข้าได้ 2 ทาง: ชื่อผู้ใช้ + รหัสผ่าน หรือ PIN อย่างเดียว) ---------- */
 
 /** ชื่อผู้ใช้: a-z 0-9 . _ - ยาว 3–32 ตัว ไม่สนตัวพิมพ์เล็กใหญ่ (เก็บเป็นตัวเล็กเสมอ) */
 export const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
@@ -136,16 +136,22 @@ export function validateLoginInput(raw: unknown): ValidationResult<LoginInput> {
   return check.result({ username, password });
 }
 
-/** ขั้นที่ 2: ตั๋วจากขั้นที่ 1 + PIN */
-export function validatePinStepInput(raw: unknown): ValidationResult<{ challenge: string; pin: string }> {
+/** เข้าด้วย PIN อย่างเดียว — PIN ไม่ซ้ำกันทั้งระบบ จึงบอกได้ว่าเป็นของใคร */
+export function validatePinLoginInput(raw: unknown): ValidationResult<{ pin: string }> {
   const input = asRecord(raw);
   const check = new Check();
-  const challenge = typeof input.challenge === 'string' ? input.challenge : '';
-  if (challenge === '') check.fail('challenge', 'กรุณาเข้าสู่ระบบด้วยรหัสผ่านก่อน');
   const pin = typeof input.pin === 'string' ? input.pin.trim() : '';
-  if (pin === '') check.fail('pin', 'กรุณากรอก PIN');
-  return check.result({ challenge, pin });
+  if (!new RegExp(`^\\d{${PIN_LENGTH}}$`).test(pin)) check.fail('pin', `กรุณากรอก PIN ให้ครบ ${PIN_LENGTH} หลัก`);
+  return check.result({ pin });
 }
+
+/**
+ * เพดาน PIN ผิดของ "การเข้าด้วย PIN อย่างเดียว" รวมทั้งระบบต่อชั่วโมง
+ * ทางนี้ไม่มีชื่อผู้ใช้ จึงล็อกรายบัญชีไม่ได้ — ครบเพดานแล้วปิดทาง PIN ชั่วคราว (ทางรหัสผ่านยังเข้าได้)
+ */
+export const PIN_LOGIN_FAILURE_LIMIT_PER_HOUR = 30;
+
+export const PIN_TAKEN_MESSAGE = 'PIN นี้มีคนใช้แล้ว กรุณาใช้ PIN อื่น (PIN ต้องไม่ซ้ำกัน เพราะใช้เข้าระบบได้โดยไม่ต้องใส่ชื่อ)';
 
 export interface UserAccountInput {
   username: string;

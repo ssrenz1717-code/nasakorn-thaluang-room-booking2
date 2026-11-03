@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
-import { ArrowLeft, Eye, EyeOff, LockKeyhole, UserRound } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, LockKeyhole, UserRound } from 'lucide-react';
 import { useApp } from '../../app/providers/AppProvider';
 import { DEMO_LOGINS } from '../../lib/api/demo';
-import { USER_ROLE_LABEL_TH, PIN_LENGTH, PASSWORD_MAX_LENGTH, normalizeUsername } from '@shared/schemas/user';
-import { ApiError } from '../../lib/api/types';
+import { USER_ROLE_LABEL_TH, PIN_LENGTH, PASSWORD_MAX_LENGTH } from '@shared/schemas/user';
+import { readLocal, writeLocal } from '../../lib/storage';
 import { Alert } from '../../components/ui/Alert';
 import { Button } from '../../components/ui/Button';
 import { cn } from '../../lib/cn';
@@ -11,16 +11,20 @@ import { cn } from '../../lib/cn';
 const fieldClass =
   'min-h-12 w-full rounded-control border border-line bg-surface pl-10 pr-3 text-base text-ink outline-none transition-colors duration-150 focus:border-brand focus:ring-2 focus:ring-brand/20';
 
-type Step = { kind: 'password' } | { kind: 'pin'; challenge: string; displayName: string };
+type Mode = 'password' | 'pin';
+/** จำวิธีที่ใช้ล่าสุดในเครื่องนี้ เปิดเว็บครั้งหน้าจะอยู่ที่วิธีนั้นเลย */
+const MODE_KEY = 'mrb.login.mode';
 
 /**
- * เข้าสู่ระบบ 2 ขั้น: ชื่อผู้ใช้ + รหัสผ่าน แล้วหน้าถัดไปใส่ PIN 6 หลัก
- * (ผู้ดูแลสร้างบัญชี ตั้งรหัสผ่านและ PIN ให้ในหน้าจัดการผู้ใช้)
+ * เข้าสู่ระบบได้ 2 ทาง เลือกทางใดทางหนึ่ง:
+ *  - ชื่อผู้ใช้ + รหัสผ่าน
+ *  - PIN 6 หลักอย่างเดียว (ครบ 6 หลักแล้วเข้าระบบให้เลย)
+ * ผู้ดูแลตั้งรหัสผ่านและ PIN ให้ในหน้าจัดการผู้ใช้
  * โหมดข้อมูลในเบราว์เซอร์มีรายชื่อบัญชีทดลองให้กดเลือก — ข้อมูลอยู่ในเครื่องผู้เปิดเว็บเท่านั้น
  */
 export function LoginPage() {
-  const { api, isDemo, signInWithPin, bootError } = useApp();
-  const [step, setStep] = useState<Step>({ kind: 'password' });
+  const { isDemo, signInWithPassword, signInWithPin, bootError } = useApp();
+  const [mode, setModeState] = useState<Mode>(() => (readLocal(MODE_KEY) === 'pin' ? 'pin' : 'password'));
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -30,7 +34,13 @@ export function LoginPage() {
   const pinRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
-  const message = (cause: unknown) => (cause instanceof Error ? cause.message : 'เข้าสู่ระบบไม่สำเร็จ');
+  const setMode = (next: Mode) => {
+    setModeState(next);
+    writeLocal(MODE_KEY, next);
+    setError(null);
+  };
+
+  const fail = (cause: unknown) => setError(cause instanceof Error ? cause.message : 'เข้าสู่ระบบไม่สำเร็จ');
 
   const submitPassword = (event: FormEvent) => {
     event.preventDefault();
@@ -41,54 +51,33 @@ export function LoginPage() {
     }
     setBusy(true);
     setError(null);
-    api.login(username, password)
-      .then((result) => {
-        setPin('');
-        setStep({ kind: 'pin', challenge: result.challenge, displayName: result.displayName });
-      })
-      .catch((cause: unknown) => {
-        setError(message(cause));
-        setPassword('');
-        passwordRef.current?.focus();
-      })
+    signInWithPassword(username, password)
+      .catch((cause: unknown) => { fail(cause); setPassword(''); passwordRef.current?.focus(); })
       .finally(() => setBusy(false));
   };
 
-  const submitPin = (event?: FormEvent) => {
-    event?.preventDefault();
-    if (busy || step.kind !== 'pin') return;
-    if (pin.length !== PIN_LENGTH) { setError(`กรุณากรอก PIN ให้ครบ ${PIN_LENGTH} หลัก`); return; }
+  const submitPin = (value: string) => {
+    if (busy) return;
+    if (value.length !== PIN_LENGTH) { setError(`กรุณากรอก PIN ให้ครบ ${PIN_LENGTH} หลัก`); return; }
     setBusy(true);
     setError(null);
-    signInWithPin(step.challenge, pin)
-      .catch((cause: unknown) => {
-        // ตั๋วหมดอายุ/ใช้ไม่ได้ -> กลับไปใส่รหัสผ่านใหม่, PIN ผิด -> อยู่หน้าเดิมให้ลองอีก
-        if (cause instanceof ApiError && cause.code === 'UNAUTHENTICATED' && cause.message !== 'PIN ไม่ถูกต้อง') {
-          setStep({ kind: 'password' });
-          setPassword('');
-        }
-        setError(message(cause));
-        setPin('');
-        pinRef.current?.focus();
-      })
+    signInWithPin(value)
+      .catch((cause: unknown) => { fail(cause); setPin(''); window.setTimeout(() => pinRef.current?.focus(), 0); })
       .finally(() => setBusy(false));
   };
 
-  const backToPassword = () => {
-    setStep({ kind: 'password' });
-    setPassword('');
-    setPin('');
-    setError(null);
+  // ใส่ครบ 6 หลักแล้วเข้าระบบให้เลย ไม่ต้องกดปุ่ม
+  const changePin = (value: string) => {
+    setPin(value);
+    if (value.length === PIN_LENGTH) submitPin(value);
   };
 
   const pickDemo = (login: (typeof DEMO_LOGINS)[number]) => {
-    setStep({ kind: 'password' });
+    setError(null);
+    if (mode === 'pin') { setPin(''); submitPin(login.pin); return; }
     setUsername(login.username);
     setPassword(login.password);
-    setError(null);
   };
-
-  const demoPin = step.kind === 'pin' ? DEMO_LOGINS.find((login) => login.username === normalizeUsername(username))?.pin : undefined;
 
   return (
     <div className="grid min-h-dvh lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
@@ -121,18 +110,27 @@ export function LoginPage() {
 
       <main className="flex items-start justify-center bg-canvas px-4 py-8 sm:items-center sm:px-6 lg:py-12">
         <div className="w-full max-w-sm">
-          {step.kind === 'password' ? (
-            <>
-              <h1 className="text-2xl font-semibold tracking-tight text-ink">เข้าสู่ระบบ</h1>
-              <p className="mt-1 text-[15px] text-ink-muted">ใช้ชื่อผู้ใช้และรหัสผ่านที่ได้รับจากผู้ดูแลระบบ</p>
-            </>
-          ) : (
-            <>
-              <p className="text-sm font-medium text-brand">ขั้นที่ 2 จาก 2</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink">ใส่ PIN {PIN_LENGTH} หลัก</h1>
-              <p className="mt-1 text-[15px] text-ink-muted">ยืนยันตัวตนของ <span className="font-medium text-ink">{step.displayName}</span></p>
-            </>
-          )}
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">เข้าสู่ระบบ</h1>
+          <p className="mt-1 text-[15px] text-ink-muted">เลือกเข้าด้วยรหัสผ่าน หรือ PIN ที่ได้รับจากผู้ดูแลระบบ</p>
+
+          <div role="tablist" aria-label="วิธีเข้าสู่ระบบ" className="mt-6 grid grid-cols-2 gap-1 rounded-control bg-neutral-soft p-1">
+            {([
+              { value: 'password', label: 'ชื่อผู้ใช้และรหัสผ่าน', icon: LockKeyhole },
+              { value: 'pin', label: 'PIN', icon: KeyRound },
+            ] as const).map((tab) => (
+              <button
+                key={tab.value} type="button" role="tab" aria-selected={mode === tab.value} aria-controls={`login-panel-${tab.value}`}
+                onClick={() => setMode(tab.value)}
+                className={cn(
+                  'flex min-h-11 items-center justify-center gap-2 rounded-inner px-2 text-sm font-medium transition-colors',
+                  mode === tab.value ? 'bg-surface text-ink shadow-card' : 'text-ink-muted hover:text-ink',
+                )}
+              >
+                <tab.icon className="size-4 shrink-0" aria-hidden="true" />
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
           {error !== null && (
             <Alert tone="danger" title="เข้าสู่ระบบไม่สำเร็จ" className="mt-5">
@@ -140,8 +138,8 @@ export function LoginPage() {
             </Alert>
           )}
 
-          {step.kind === 'password' ? (
-            <form className="mt-6 space-y-4" onSubmit={submitPassword} noValidate>
+          {mode === 'password' ? (
+            <form id="login-panel-password" role="tabpanel" className="mt-5 space-y-4" onSubmit={submitPassword} noValidate>
               <div>
                 <label htmlFor="login-username" className="mb-1.5 block text-sm font-medium text-ink">ชื่อผู้ใช้</label>
                 <div className="relative">
@@ -174,38 +172,34 @@ export function LoginPage() {
                 </div>
               </div>
 
-              <Button type="submit" fullWidth size="lg" loading={busy} loadingLabel="กำลังตรวจสอบ">ถัดไป</Button>
-              <p className="text-sm text-ink-subtle">ลืมรหัสผ่านหรือ PIN ติดต่อผู้ดูแลระบบให้รีเซ็ตให้</p>
+              <Button type="submit" fullWidth size="lg" loading={busy} loadingLabel="กำลังตรวจสอบ">เข้าสู่ระบบ</Button>
             </form>
           ) : (
-            <form className="mt-6 space-y-4" onSubmit={submitPin} noValidate>
-              <PinBoxes inputRef={pinRef} value={pin} onChange={setPin} />
-              <Button type="submit" fullWidth size="lg" loading={busy} loadingLabel="กำลังยืนยัน" disabled={pin.length !== PIN_LENGTH}>
-                เข้าสู่ระบบ
+            <form id="login-panel-pin" role="tabpanel" className="mt-5 space-y-4" onSubmit={(event) => { event.preventDefault(); submitPin(pin); }} noValidate>
+              <PinBoxes inputRef={pinRef} value={pin} onChange={changePin} disabled={busy} />
+              <p className="text-sm text-ink-muted">ใส่ครบ {PIN_LENGTH} หลักแล้วเข้าระบบให้ทันที</p>
+              <Button type="submit" fullWidth size="lg" loading={busy} loadingLabel="กำลังตรวจสอบ" disabled={pin.length !== PIN_LENGTH}>
+                เข้าสู่ระบบด้วย PIN
               </Button>
-              {isDemo && demoPin !== undefined && (
-                <p className="text-sm text-ink-muted">PIN ของบัญชีทดลองนี้: <span className="font-medium tabular-nums text-ink">{demoPin}</span></p>
-              )}
-              <button type="button" onClick={backToPassword} className="flex min-h-11 items-center gap-1.5 text-sm font-medium text-brand hover:underline">
-                <ArrowLeft className="size-4" aria-hidden="true" /> ไม่ใช่บัญชีนี้ กลับไปหน้าก่อน
-              </button>
             </form>
           )}
+
+          <p className="mt-4 text-sm text-ink-subtle">ลืมรหัสผ่านหรือ PIN ติดต่อผู้ดูแลระบบให้รีเซ็ตให้</p>
 
           {isDemo && (
             <section aria-labelledby="demo-accounts" className="mt-8 border-t border-line pt-5">
               <h2 id="demo-accounts" className="text-sm font-semibold text-ink">บัญชีทดลอง</h2>
-              <p className="mt-0.5 text-sm text-ink-muted">ยังไม่ได้เชื่อม Google ข้อมูลเก็บในเบราว์เซอร์เครื่องนี้ กดเพื่อกรอกชื่อผู้ใช้และรหัสผ่านให้</p>
+              <p className="mt-0.5 text-sm text-ink-muted">ยังไม่ได้เชื่อม Google ข้อมูลเก็บในเบราว์เซอร์เครื่องนี้ กดเพื่อ{mode === 'pin' ? 'เข้าด้วย PIN ของบัญชีนั้น' : 'กรอกชื่อผู้ใช้และรหัสผ่านให้'}</p>
               <ul className="mt-3 divide-y divide-line rounded-card bg-surface ring-1 ring-line">
                 {DEMO_LOGINS.map((login) => (
                   <li key={login.username}>
                     <button
                       type="button"
                       onClick={() => pickDemo(login)}
-                      aria-pressed={username === login.username}
+                      aria-pressed={mode === 'password' && username === login.username}
                       className={cn(
                         'flex min-h-12 w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-surface-sunken',
-                        username === login.username && 'bg-brand-soft hover:bg-brand-soft',
+                        mode === 'password' && username === login.username && 'bg-brand-soft hover:bg-brand-soft',
                       )}
                     >
                       <span className="min-w-0 flex-1">
@@ -234,8 +228,8 @@ export function LoginPage() {
  * กล่องเป็นแค่ภาพแสดงว่าพิมพ์ไปกี่หลักแล้ว
  */
 function PinBoxes({
-  inputRef, value, onChange,
-}: { inputRef: RefObject<HTMLInputElement | null>; value: string; onChange: (pin: string) => void }) {
+  inputRef, value, onChange, disabled,
+}: { inputRef: RefObject<HTMLInputElement | null>; value: string; onChange: (pin: string) => void; disabled: boolean }) {
   const [focused, setFocused] = useState(false);
   useEffect(() => { inputRef.current?.focus(); }, [inputRef]);
   return (
@@ -244,7 +238,7 @@ function PinBoxes({
       <div className="relative">
         <input
           ref={inputRef} id="login-pin" type="password" inputMode="numeric" pattern="[0-9]*" autoComplete="one-time-code"
-          maxLength={PIN_LENGTH} value={value}
+          maxLength={PIN_LENGTH} value={value} disabled={disabled}
           onChange={(event) => onChange(event.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))}
           onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
           className="absolute inset-0 z-10 h-full w-full cursor-text opacity-0"

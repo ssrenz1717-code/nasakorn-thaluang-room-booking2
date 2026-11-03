@@ -38,6 +38,7 @@ function createUser_(admin, raw) {
     if (findByKey_(Domain.SHEET_USERS, input.username) !== null) {
       throw appError_(ERROR_CODES.CONFLICT, `มีชื่อผู้ใช้ "${input.username}" อยู่แล้ว`);
     }
+    assertPinUnique_(input.pin, input.username);
     const now = nowIso_();
     const row = Object.assign({
       username: input.username, displayName: input.displayName, department: input.department,
@@ -81,6 +82,7 @@ function resetUserPin_(admin, raw) {
   return withScriptLock_(function () {
     const row = findByKey_(Domain.SHEET_USERS, input.username);
     if (row === null) throw appError_(ERROR_CODES.NOT_FOUND, 'ไม่พบผู้ใช้');
+    assertPinUnique_(input.pin, input.username);
     const patch = Object.assign(newPinCredential_(input.username, input.pin), {
       tokenVersion: (Number(row.tokenVersion) || 1) + 1, updatedAt: nowIso_(),
     });

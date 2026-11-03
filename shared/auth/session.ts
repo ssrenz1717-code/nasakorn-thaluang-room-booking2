@@ -126,53 +126,6 @@ export function constantTimeEquals(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/* ---------- ตั๋วขั้นที่ 2: ผ่านรหัสผ่านแล้ว รอใส่ PIN ---------- */
-
-/** อายุตั๋วรอ PIN — สั้นพอที่ตั๋วหลุดไปแล้วเอาไปใช้ต่อได้ยาก แต่พอให้คนพิมพ์ PIN ทัน */
-export const PIN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
-const CHALLENGE_TAG = 'challenge';
-
-/**
- * ตั๋วนี้ไม่ใช่ session: เซ็นด้วยกุญแจที่ผูกคำว่า pin-challenge ไว้ และช่องที่สองไม่ใช่ role
- * verifySessionToken จึงไม่มีทางรับตั๋วนี้เป็น session ได้ (และกลับกัน)
- */
-function challengeSecret(secret: string): string {
-  return `${secret}|pin-challenge`;
-}
-
-export function createPinChallenge(
-  payload: { username: string; tokenVersion: number; expiresAt: number },
-  secret: string,
-  hmac: HmacFn,
-): string {
-  if (payload.username.includes(SEPARATOR)) throw new Error('ชื่อผู้ใช้มีอักขระที่ใช้ไม่ได้');
-  if (secret === '') throw new Error('ยังไม่ได้ตั้งค่ากุญแจลับของระบบ');
-  const body = [CHALLENGE_TAG, payload.username, String(payload.tokenVersion), String(payload.expiresAt)].join(SEPARATOR);
-  return `${body}${SEPARATOR}${hmac(body, challengeSecret(secret))}`;
-}
-
-export type PinChallengeResult =
-  | { ok: true; username: string; tokenVersion: number }
-  | { ok: false; reason: SessionFailureReason };
-
-export function verifyPinChallenge(token: string, secret: string, hmac: HmacFn, nowMs: number): PinChallengeResult {
-  if (typeof token !== 'string' || token === '' || secret === '') return { ok: false, reason: 'MALFORMED' };
-  const lastSeparator = token.lastIndexOf(SEPARATOR);
-  if (lastSeparator <= 0) return { ok: false, reason: 'MALFORMED' };
-  const body = token.substring(0, lastSeparator);
-  const parts = body.split(SEPARATOR);
-  const [tag, username, versionRaw, expiresRaw] = parts;
-  if (parts.length !== 4 || tag !== CHALLENGE_TAG || !username) return { ok: false, reason: 'MALFORMED' };
-  const tokenVersion = Number(versionRaw);
-  const expiresAt = Number(expiresRaw);
-  if (!Number.isInteger(tokenVersion) || !Number.isFinite(expiresAt)) return { ok: false, reason: 'MALFORMED' };
-  if (!constantTimeEquals(token.substring(lastSeparator + 1), hmac(body, challengeSecret(secret)))) {
-    return { ok: false, reason: 'BAD_SIGNATURE' };
-  }
-  if (nowMs >= expiresAt) return { ok: false, reason: 'EXPIRED' };
-  return { ok: true, username, tokenVersion };
-}
-
 export function sessionExpiryFrom(nowMs: number, ttlMs: number): number {
   return nowMs + ttlMs;
 }

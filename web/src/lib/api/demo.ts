@@ -24,10 +24,9 @@ import { COLLEGE_ROOMS, OPEN_LOCATION_ROOM_CODE, isOpenLocationRoom } from '@sha
 import { validateDecideBookingInput } from '@shared/schemas/booking';
 import {
   COLLEGE_ACCOUNTS, PIN_LOCK_MINUTES, PIN_MAX_FAILURES, canUseRoom, constantTimeEqual, lastAdminProblem,
-  normalizeUsername, passwordDigestMessage, pinDigestMessage, validateLoginInput, validatePinStepInput,
-  validateResetPasswordInput, validateResetPinInput, validateUserAccountInput,
+  PIN_LOGIN_FAILURE_LIMIT_PER_HOUR, PIN_TAKEN_MESSAGE, normalizeUsername, passwordDigestMessage, pinDigestMessage,
+  validateLoginInput, validatePinLoginInput, validateResetPasswordInput, validateResetPinInput, validateUserAccountInput,
 } from '@shared/schemas/user';
-import { PIN_CHALLENGE_TTL_MS } from '@shared/auth/session';
 
 export interface DemoRoom {
   roomId: string;
@@ -293,15 +292,30 @@ function createState(users: DemoUser[]): DemoState {
  * ผูกรุ่นไว้ใน token: session ที่ค้างจากรุ่นก่อน (ตอนยังไม่มีหน้า PIN) จะใช้ไม่ได้
  * ทุกคนต้องผ่านหน้ารหัสผ่าน + PIN ใหม่ — เปลี่ยนรุ่นพร้อม LOCAL_STORAGE_KEY ทุกครั้ง
  */
-const DEMO_TOKEN_PREFIX = 'demo-session.v4:';
+const DEMO_TOKEN_PREFIX = 'demo-session.v5:';
 
 export function createDemoTransport(): Transport {
   const ready = loadState();
   let state!: DemoState;
   /** รหัสผ่าน/PIN ผิดติดกันรายบัญชี — เหมือนตัวนับใน CacheService ของ Apps Script */
   const failures = new Map<string, { count: number; until: number }>();
-  /** ตั๋วรอ PIN ที่ออกไปแล้ว (ขั้นที่ 1 ผ่าน) */
-  const challenges = new Map<string, { username: string; tokenVersion: number; expiresAt: number }>();
+  /** PIN ผิดของทางเข้าด้วย PIN อย่างเดียว รวมทั้งระบบ (ล็อกรายบัญชีไม่ได้เพราะไม่รู้ว่าใคร) */
+  let pinLoginFailures = { hour: 0, count: 0 };
+
+  function issueSession(user: DemoUser): { token: string; user: SessionUser } {
+    if (user.status !== 'active') throw new ApiError('FORBIDDEN', 'บัญชีนี้ถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
+    failures.delete(user.email);
+    user.lastLoginAt = new Date().toISOString();
+    saveState(state);
+    return { token: `${DEMO_TOKEN_PREFIX}${user.email}:${user.tokenVersion}`, user: sessionView(user) };
+  }
+
+  async function findByPin(pin: string, exceptUsername = ''): Promise<DemoUser | undefined> {
+    for (const user of state.users) {
+      if (user.email !== exceptUsername && await pinMatches(user, pin)) return user;
+    }
+    return undefined;
+  }
 
   function assertNotLocked(username: string): void {
     const failure = failures.get(username);
@@ -363,33 +377,23 @@ export function createDemoTransport(): Transport {
         recordFailure(username);
         throw new ApiError('UNAUTHENTICATED', 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
       }
-      if (user.status !== 'active') throw new ApiError('FORBIDDEN', 'บัญชีนี้ถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
-      const challenge = `demo-challenge:${newSalt()}`;
-      challenges.set(challenge, { username, tokenVersion: user.tokenVersion, expiresAt: Date.now() + PIN_CHALLENGE_TTL_MS });
-      return { challenge, displayName: user.displayName };
+      return issueSession(user);
     },
 
     loginPin: async (payload: unknown) => {
-      const parsed = validatePinStepInput(payload);
-      if (!parsed.ok) throw new ApiError('VALIDATION', 'กรุณากรอก PIN', parsed.issues);
-      const ticket = challenges.get(parsed.value.challenge);
-      if (!ticket || ticket.expiresAt <= Date.now()) {
-        throw new ApiError('UNAUTHENTICATED', 'หมดเวลายืนยัน PIN กรุณาเข้าสู่ระบบด้วยรหัสผ่านอีกครั้ง');
+      const parsed = validatePinLoginInput(payload);
+      if (!parsed.ok) throw new ApiError('VALIDATION', 'กรุณากรอก PIN ให้ครบ 6 หลัก', parsed.issues);
+      const hour = Math.floor(Date.now() / 3_600_000);
+      if (pinLoginFailures.hour === hour && pinLoginFailures.count >= PIN_LOGIN_FAILURE_LIMIT_PER_HOUR) {
+        throw new ApiError('BUSY', 'มีการใส่ PIN ผิดหลายครั้ง ปิดการเข้าด้วย PIN ชั่วคราว กรุณาเข้าด้วยชื่อผู้ใช้และรหัสผ่าน');
       }
-      assertNotLocked(ticket.username);
-      const user = state.users.find((candidate) => candidate.email === ticket.username);
-      if (!user || user.status !== 'active' || user.tokenVersion !== ticket.tokenVersion) {
-        throw new ApiError('UNAUTHENTICATED', 'กรุณาเข้าสู่ระบบด้วยรหัสผ่านอีกครั้ง');
-      }
-      if (!(await pinMatches(user, parsed.value.pin))) {
-        recordFailure(user.email);
+      const user = await findByPin(parsed.value.pin);
+      if (user === undefined) {
+        pinLoginFailures = { hour, count: (pinLoginFailures.hour === hour ? pinLoginFailures.count : 0) + 1 };
         throw new ApiError('UNAUTHENTICATED', 'PIN ไม่ถูกต้อง');
       }
-      challenges.delete(parsed.value.challenge);
-      failures.delete(user.email);
-      user.lastLoginAt = new Date().toISOString();
-      saveState(state);
-      return { token: `${DEMO_TOKEN_PREFIX}${user.email}:${user.tokenVersion}`, user: sessionView(user) };
+      assertNotLocked(user.email);
+      return issueSession(user);
     },
 
     users: (_payload, token) => {
@@ -404,6 +408,7 @@ export function createDemoTransport(): Transport {
       if (state.users.some((user) => user.email === input.username)) {
         throw new ApiError('CONFLICT', `มีชื่อผู้ใช้ "${input.username}" อยู่แล้ว`);
       }
+      if (await findByPin(input.pin)) throw new ApiError('CONFLICT', PIN_TAKEN_MESSAGE);
       const user: DemoUser = {
         email: input.username, displayName: input.displayName, department: input.department, role: input.role,
         status: input.status, allowedRoomIds: input.allowedRoomIds, tokenVersion: 1, lastLoginAt: '',
@@ -438,6 +443,7 @@ export function createDemoTransport(): Transport {
       if (!parsed.ok) throw new ApiError('VALIDATION', issues(parsed), parsed.issues);
       const user = state.users.find((item) => item.email === parsed.value.username);
       if (!user) throw new ApiError('NOT_FOUND', 'ไม่พบผู้ใช้');
+      if (await findByPin(parsed.value.pin, user.email)) throw new ApiError('CONFLICT', PIN_TAKEN_MESSAGE);
       Object.assign(user, await demoCredential(user.email, parsed.value.pin));
       user.tokenVersion += 1;
       failures.delete(user.email);

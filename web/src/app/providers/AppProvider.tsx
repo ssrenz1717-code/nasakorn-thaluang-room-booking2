@@ -10,7 +10,7 @@ import {
 import type { SystemSettings } from '@shared/schemas/settings';
 import { createApiClient, type ApiClient } from '../../lib/api/client';
 import { readAppConfig, type AppConfig } from '../../lib/api/config';
-import { ApiError, type SessionUser } from '../../lib/api/types';
+import { ApiError, type LoginResult, type SessionUser } from '../../lib/api/types';
 import { readLocal, removeLocal, writeLocal } from '../../lib/storage';
 
 const TOKEN_KEY = 'mrb.session.token';
@@ -29,8 +29,8 @@ interface AppState {
   serverTime: Date | null;
   dataVersion: number;
   bootError: string | null;
-  /** ขั้นที่ 2 ของการเข้าสู่ระบบ (ขั้นที่ 1 หน้าเข้าสู่ระบบเรียก api.login เอง) */
-  signInWithPin(challenge: string, pin: string): Promise<void>;
+  signInWithPassword(username: string, password: string): Promise<void>;
+  signInWithPin(pin: string): Promise<void>;
   signOut(): void;
   retryBoot(): void;
 }
@@ -113,9 +113,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [api, isDemo, applyBootstrap, bootAttempt]);
 
-  const signInWithPin = useCallback(
-    async (challenge: string, pin: string) => {
-      const result = await api.loginPin(challenge, pin);
+  const startSession = useCallback(
+    async (result: LoginResult) => {
       const boot = await api.bootstrap(result.token);
       writeLocal(TOKEN_KEY, result.token);
       setToken(result.token);
@@ -123,6 +122,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [api, applyBootstrap],
   );
+  const signInWithPassword = useCallback(
+    async (username: string, password: string) => startSession(await api.login(username, password)),
+    [api, startSession],
+  );
+  const signInWithPin = useCallback(async (pin: string) => startSession(await api.loginPin(pin)), [api, startSession]);
 
   const signOut = useCallback(() => {
     removeLocal(TOKEN_KEY);
@@ -149,6 +153,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       serverTime,
       dataVersion,
       bootError,
+      signInWithPassword,
       signInWithPin,
       signOut,
       retryBoot,
@@ -164,6 +169,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       serverTime,
       dataVersion,
       bootError,
+      signInWithPassword,
       signInWithPin,
       signOut,
       retryBoot,

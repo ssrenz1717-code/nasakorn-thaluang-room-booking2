@@ -6,7 +6,7 @@ import {
   passwordProblem,
   pinProblem,
   validateLoginInput,
-  validatePinStepInput,
+  validatePinLoginInput,
   validateResetPasswordInput,
   validateResetPinInput,
   validateUserAccountInput,
@@ -65,7 +65,8 @@ describe('ฟอร์มบัญชีผู้ใช้', () => {
   it('เข้าสู่ระบบ/รีเซ็ต ตรวจช่องว่างและค่าใหม่', () => {
     expect(validateLoginInput({ username: '', password: '' }).ok).toBe(false);
     expect(validateLoginInput({ username: 'shoyu', password: 'x' }).ok).toBe(true);
-    expect(validatePinStepInput({ challenge: '', pin: '240617' }).ok).toBe(false);
+    expect(validatePinLoginInput({ pin: '24061' }).ok).toBe(false);
+    expect(validatePinLoginInput({ pin: '240617' }).ok).toBe(true);
     expect(validateResetPasswordInput({ username: 'abc', password: 'short1' }).ok).toBe(false);
     expect(validateResetPasswordInput({ username: 'abc', password: 'longenough1' }).ok).toBe(true);
     expect(validateResetPinInput({ username: 'a', pin: '111111' }).ok).toBe(false);

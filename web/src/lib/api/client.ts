@@ -2,7 +2,7 @@
 
 import { createDemoTransport } from './demo';
 import { createHttpTransport } from './transport';
-import type { AdminUser, BootstrapResult, LoginResult, PasswordStepResult, SessionUser, Transport, VersionResult } from './types';
+import type { AdminUser, BootstrapResult, LoginResult, SessionUser, Transport, VersionResult } from './types';
 import type { UserAccountInput } from '@shared/schemas/user';
 import type { DemoBooking, DemoRoom } from './demo';
 import type { BookingRequest } from '@shared/schemas/booking';
@@ -26,10 +26,10 @@ function announceBookingsChanged<T>(result: Promise<T>): Promise<T> {
 export interface ApiClient {
   readonly mode: 'http' | 'demo';
   ping(): Promise<{ pong: boolean; serverTime: string }>;
-  /** ขั้นที่ 1: ชื่อผู้ใช้ + รหัสผ่าน -> ตั๋วรอ PIN */
-  login(username: string, password: string): Promise<PasswordStepResult>;
-  /** ขั้นที่ 2: ตั๋ว + PIN -> session */
-  loginPin(challenge: string, pin: string): Promise<LoginResult>;
+  /** เข้าสู่ระบบทาง ก: ชื่อผู้ใช้ + รหัสผ่าน */
+  login(username: string, password: string): Promise<LoginResult>;
+  /** เข้าสู่ระบบทาง ข: PIN อย่างเดียว */
+  loginPin(pin: string): Promise<LoginResult>;
   me(token: string): Promise<{ user: SessionUser }>;
   bootstrap(token: string): Promise<BootstrapResult>;
   version(): Promise<VersionResult>;
@@ -60,7 +60,7 @@ function wrap(transport: Transport): ApiClient {
     mode: transport.kind,
     ping: () => transport.call('ping'),
     login: (username, password) => transport.call('login', { username, password }),
-    loginPin: (challenge, pin) => transport.call('loginPin', { challenge, pin }),
+    loginPin: (pin) => transport.call('loginPin', { pin }),
     me: (token) => transport.call('me', {}, token),
     bootstrap: (token) => transport.call('bootstrap', {}, token),
     version: () => transport.version(),

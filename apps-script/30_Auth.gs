@@ -2,10 +2,11 @@
  * การยืนยันตัวตนและสิทธิ์
  *
  * ขั้นตอน:
- *  1. ผู้ใช้กรอกชื่อผู้ใช้ + รหัสผ่าน -> ถูกต้องได้ "ตั๋วรอ PIN" อายุ 5 นาที (ยังไม่ใช่ session)
- *  2. หน้าถัดไปกรอก PIN 6 หลัก พร้อมตั๋ว -> ถูกต้องจึงออก session token (อายุ 12 ชม.)
- *  3. ชีต Users เก็บแค่ HMAC ของรหัสผ่านและ PIN ไม่มีค่าจริง
- *  4. ผิดติดกัน PIN_MAX_FAILURES ครั้ง (รหัสผ่านหรือ PIN รวมกัน) บัญชีนั้นล็อก PIN_LOCK_MINUTES นาที
+ *  เข้าได้ 2 ทาง (เลือกทางใดทางหนึ่ง) แล้วได้ session token อายุ 12 ชม.:
+ *   ก. ชื่อผู้ใช้ + รหัสผ่าน — ผิดติดกัน PIN_MAX_FAILURES ครั้ง บัญชีนั้นล็อก PIN_LOCK_MINUTES นาที
+ *   ข. PIN อย่างเดียว — PIN ไม่ซ้ำกันทั้งระบบจึงหาเจ้าของได้ ผิดรวมทั้งระบบครบ
+ *      PIN_LOGIN_FAILURE_LIMIT_PER_HOUR ครั้ง ปิดทางนี้ถึงต้นชั่วโมงถัดไป (ทาง ก ยังเข้าได้)
+ *  ชีต Users เก็บแค่ HMAC ของรหัสผ่านและ PIN ไม่มีค่าจริง
  *  ผู้ลงนามต้องใส่ PIN อีกครั้งทุกครั้งที่กดอนุมัติ/ไม่อนุมัติ (verifyActorPin_)
  *
  * กฎเหล็ก: ทุกฟังก์ชันที่แก้ข้อมูลต้องเรียก authenticate_() แล้วใช้ "สิทธิ์จากชีต"
@@ -110,7 +111,32 @@ function recordPinFailure_(username) {
   recordLoginFailure_();
 }
 
-/** ขั้นที่ 1: ชื่อผู้ใช้ + รหัสผ่าน -> ตั๋วรอ PIN (ข้อความผิดพลาดเหมือนกันทั้งชื่อผิดและรหัสผิด) */
+function issueSession_(user) {
+  const username = String(user.username);
+  CacheService.getScriptCache().remove(pinFailureKey_(username));
+  withScriptLock_(function () {
+    updateByKey_(Domain.SHEET_USERS, username, { lastLoginAt: nowIso_() });
+  });
+  const token = Domain.createSessionToken(
+    {
+      email: username,
+      role: Domain.normalizeUserRole(user.role),
+      tokenVersion: Number(user.tokenVersion) || 1,
+      expiresAt: Domain.sessionExpiryFrom(serverNow_().getTime(), SESSION_TTL_MS),
+    },
+    sessionSecret_(),
+    hmacBase64_,
+  );
+  return { token: token, user: publicUser_(user) };
+}
+
+function assertActive_(user) {
+  if (String(user.status) !== 'active') {
+    throw appError_(ERROR_CODES.FORBIDDEN, 'บัญชีนี้ถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
+  }
+}
+
+/** ทาง ก: ชื่อผู้ใช้ + รหัสผ่าน (ข้อความผิดพลาดเหมือนกันทั้งชื่อผิดและรหัสผิด) */
 function login_(raw) {
   const parsed = Domain.validateLoginInput(raw);
   if (!parsed.ok) throw appError_(ERROR_CODES.VALIDATION, 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน', parsed.issues);
@@ -126,60 +152,43 @@ function login_(raw) {
     recordPinFailure_(username);
     throw appError_(ERROR_CODES.UNAUTHENTICATED, 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
   }
-  if (String(user.status) !== 'active') {
-    throw appError_(ERROR_CODES.FORBIDDEN, 'บัญชีนี้ถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
-  }
-
-  const challenge = Domain.createPinChallenge(
-    {
-      username: username,
-      tokenVersion: Number(user.tokenVersion) || 1,
-      expiresAt: serverNow_().getTime() + Domain.PIN_CHALLENGE_TTL_MS,
-    },
-    sessionSecret_(),
-    hmacBase64_,
-  );
-  return { challenge: challenge, displayName: String(user.displayName || username) };
+  assertActive_(user);
+  return issueSession_(user);
 }
 
-/** ขั้นที่ 2: ตั๋วรอ PIN + PIN -> session token */
-function loginPin_(raw) {
-  const parsed = Domain.validatePinStepInput(raw);
-  if (!parsed.ok) throw appError_(ERROR_CODES.VALIDATION, 'กรุณากรอก PIN', parsed.issues);
-  const ticket = Domain.verifyPinChallenge(parsed.value.challenge, sessionSecret_(), hmacBase64_, serverNow_().getTime());
-  if (!ticket.ok) {
-    throw appError_(ERROR_CODES.UNAUTHENTICATED, 'หมดเวลายืนยัน PIN กรุณาเข้าสู่ระบบด้วยรหัสผ่านอีกครั้ง');
-  }
-  const username = ticket.username;
-  assertLoginAllowed_();
-  assertNotLocked_(username);
+function pinLoginFailureKey_() {
+  return `pin_login_fail_${Math.floor(serverNow_().getTime() / 3_600_000)}`;
+}
 
-  const user = findByKey_(Domain.SHEET_USERS, username);
-  // รีเซ็ตรหัส/ปิดบัญชีระหว่างรอ PIN -> ตั๋วใบเดิมใช้ไม่ได้
-  if (user === null || String(user.status) !== 'active' || (Number(user.tokenVersion) || 1) !== ticket.tokenVersion) {
-    throw appError_(ERROR_CODES.UNAUTHENTICATED, 'กรุณาเข้าสู่ระบบด้วยรหัสผ่านอีกครั้ง');
+/** ทาง ข: PIN อย่างเดียว — ไล่เทียบกับทุกบัญชี (คนละ salt จึงต้องคำนวณทีละคน) */
+function loginPin_(raw) {
+  const parsed = Domain.validatePinLoginInput(raw);
+  if (!parsed.ok) throw appError_(ERROR_CODES.VALIDATION, `กรุณากรอก PIN ให้ครบ ${Domain.PIN_LENGTH} หลัก`, parsed.issues);
+  assertLoginAllowed_();
+  const cache = CacheService.getScriptCache();
+  const failures = Number(cache.get(pinLoginFailureKey_())) || 0;
+  if (failures >= Domain.PIN_LOGIN_FAILURE_LIMIT_PER_HOUR) {
+    throw appError_(ERROR_CODES.BUSY, 'มีการใส่ PIN ผิดหลายครั้ง ปิดการเข้าด้วย PIN ชั่วคราว กรุณาเข้าด้วยชื่อผู้ใช้และรหัสผ่าน');
   }
-  if (!pinMatches_(user, parsed.value.pin)) {
-    recordPinFailure_(username);
+  const user = readAll_(Domain.SHEET_USERS).objects.filter(function (row) {
+    return pinMatches_(row, parsed.value.pin);
+  })[0];
+  if (!user) {
+    cache.put(pinLoginFailureKey_(), String(failures + 1), 3900);
+    recordLoginFailure_();
     throw appError_(ERROR_CODES.UNAUTHENTICATED, 'PIN ไม่ถูกต้อง');
   }
+  assertActive_(user);
+  assertNotLocked_(String(user.username));
+  return issueSession_(user);
+}
 
-  CacheService.getScriptCache().remove(pinFailureKey_(username));
-  withScriptLock_(function () {
-    updateByKey_(Domain.SHEET_USERS, username, { lastLoginAt: nowIso_() });
+/** PIN ต้องไม่ซ้ำกับบัญชีอื่น เพราะใช้เข้าระบบได้โดยไม่ต้องใส่ชื่อ */
+function assertPinUnique_(pin, exceptUsername) {
+  const taken = readAll_(Domain.SHEET_USERS).objects.some(function (row) {
+    return String(row.username) !== exceptUsername && pinMatches_(row, pin);
   });
-
-  const token = Domain.createSessionToken(
-    {
-      email: username,
-      role: Domain.normalizeUserRole(user.role),
-      tokenVersion: Number(user.tokenVersion) || 1,
-      expiresAt: Domain.sessionExpiryFrom(serverNow_().getTime(), SESSION_TTL_MS),
-    },
-    sessionSecret_(),
-    hmacBase64_,
-  );
-  return { token: token, user: publicUser_(user) };
+  if (taken) throw appError_(ERROR_CODES.CONFLICT, Domain.PIN_TAKEN_MESSAGE);
 }
 
 /** ผู้ลงนามยืนยันตัวตนด้วย PIN ก่อนอนุมัติ/ไม่อนุมัติ — ผิดนับรวมกับตัวนับล็อกบัญชี */

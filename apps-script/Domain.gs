@@ -40,10 +40,11 @@ var Domain = (() => {
     OPEN_LOCATION_ROOM_CODE: () => OPEN_LOCATION_ROOM_CODE,
     PASSWORD_MAX_LENGTH: () => PASSWORD_MAX_LENGTH,
     PASSWORD_MIN_LENGTH: () => PASSWORD_MIN_LENGTH,
-    PIN_CHALLENGE_TTL_MS: () => PIN_CHALLENGE_TTL_MS,
     PIN_LENGTH: () => PIN_LENGTH,
     PIN_LOCK_MINUTES: () => PIN_LOCK_MINUTES,
+    PIN_LOGIN_FAILURE_LIMIT_PER_HOUR: () => PIN_LOGIN_FAILURE_LIMIT_PER_HOUR,
     PIN_MAX_FAILURES: () => PIN_MAX_FAILURES,
+    PIN_TAKEN_MESSAGE: () => PIN_TAKEN_MESSAGE,
     REQUEST_FACILITIES: () => REQUEST_FACILITIES,
     REQUEST_FACILITY_LABEL_TH: () => REQUEST_FACILITY_LABEL_TH,
     ROOM_EQUIPMENT: () => ROOM_EQUIPMENT,
@@ -85,7 +86,6 @@ var Domain = (() => {
     constantTimeEquals: () => constantTimeEquals,
     countDaysInclusive: () => countDaysInclusive,
     countsAsUsage: () => countsAsUsage,
-    createPinChallenge: () => createPinChallenge,
     createSessionToken: () => createSessionToken,
     currentApprovalStep: () => currentApprovalStep,
     dateKeyRange: () => dateKeyRange,
@@ -144,14 +144,13 @@ var Domain = (() => {
     validateCancelBookingInput: () => validateCancelBookingInput,
     validateDecideBookingInput: () => validateDecideBookingInput,
     validateLoginInput: () => validateLoginInput,
-    validatePinStepInput: () => validatePinStepInput,
+    validatePinLoginInput: () => validatePinLoginInput,
     validateResetPasswordInput: () => validateResetPasswordInput,
     validateResetPinInput: () => validateResetPinInput,
     validateRoomInput: () => validateRoomInput,
     validateSystemSettings: () => validateSystemSettings,
     validateUserAccountInput: () => validateUserAccountInput,
     validateUserProfileInput: () => validateUserProfileInput,
-    verifyPinChallenge: () => verifyPinChallenge,
     verifySessionToken: () => verifySessionToken,
     writeList: () => writeList
   });
@@ -780,15 +779,15 @@ var Domain = (() => {
     if (password === "") check.fail("password", "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19");
     return check.result({ username, password });
   }
-  function validatePinStepInput(raw) {
+  function validatePinLoginInput(raw) {
     const input = asRecord(raw);
     const check = new Check();
-    const challenge = typeof input.challenge === "string" ? input.challenge : "";
-    if (challenge === "") check.fail("challenge", "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E40\u0E02\u0E49\u0E32\u0E2A\u0E39\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E14\u0E49\u0E27\u0E22\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E01\u0E48\u0E2D\u0E19");
     const pin = typeof input.pin === "string" ? input.pin.trim() : "";
-    if (pin === "") check.fail("pin", "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01 PIN");
-    return check.result({ challenge, pin });
+    if (!new RegExp(`^\\d{${PIN_LENGTH}}$`).test(pin)) check.fail("pin", `\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01 PIN \u0E43\u0E2B\u0E49\u0E04\u0E23\u0E1A ${PIN_LENGTH} \u0E2B\u0E25\u0E31\u0E01`);
+    return check.result({ pin });
   }
+  var PIN_LOGIN_FAILURE_LIMIT_PER_HOUR = 30;
+  var PIN_TAKEN_MESSAGE = "PIN \u0E19\u0E35\u0E49\u0E21\u0E35\u0E04\u0E19\u0E43\u0E0A\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E43\u0E0A\u0E49 PIN \u0E2D\u0E37\u0E48\u0E19 (PIN \u0E15\u0E49\u0E2D\u0E07\u0E44\u0E21\u0E48\u0E0B\u0E49\u0E33\u0E01\u0E31\u0E19 \u0E40\u0E1E\u0E23\u0E32\u0E30\u0E43\u0E0A\u0E49\u0E40\u0E02\u0E49\u0E32\u0E23\u0E30\u0E1A\u0E1A\u0E44\u0E14\u0E49\u0E42\u0E14\u0E22\u0E44\u0E21\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E2A\u0E48\u0E0A\u0E37\u0E48\u0E2D)";
   function roomIdList(check, raw) {
     if (raw === void 0 || raw === null) return [];
     if (!Array.isArray(raw) || raw.some((item) => typeof item !== "string" || item.trim() === "" || item.includes(",") || item.length > 60)) {
@@ -909,34 +908,6 @@ var Domain = (() => {
       diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
     }
     return diff === 0;
-  }
-  var PIN_CHALLENGE_TTL_MS = 5 * 60 * 1e3;
-  var CHALLENGE_TAG = "challenge";
-  function challengeSecret(secret) {
-    return `${secret}|pin-challenge`;
-  }
-  function createPinChallenge(payload, secret, hmac) {
-    if (payload.username.includes(SEPARATOR)) throw new Error("\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E21\u0E35\u0E2D\u0E31\u0E01\u0E02\u0E23\u0E30\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49");
-    if (secret === "") throw new Error("\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E01\u0E38\u0E0D\u0E41\u0E08\u0E25\u0E31\u0E1A\u0E02\u0E2D\u0E07\u0E23\u0E30\u0E1A\u0E1A");
-    const body = [CHALLENGE_TAG, payload.username, String(payload.tokenVersion), String(payload.expiresAt)].join(SEPARATOR);
-    return `${body}${SEPARATOR}${hmac(body, challengeSecret(secret))}`;
-  }
-  function verifyPinChallenge(token, secret, hmac, nowMs) {
-    if (typeof token !== "string" || token === "" || secret === "") return { ok: false, reason: "MALFORMED" };
-    const lastSeparator = token.lastIndexOf(SEPARATOR);
-    if (lastSeparator <= 0) return { ok: false, reason: "MALFORMED" };
-    const body = token.substring(0, lastSeparator);
-    const parts = body.split(SEPARATOR);
-    const [tag, username, versionRaw, expiresRaw] = parts;
-    if (parts.length !== 4 || tag !== CHALLENGE_TAG || !username) return { ok: false, reason: "MALFORMED" };
-    const tokenVersion = Number(versionRaw);
-    const expiresAt = Number(expiresRaw);
-    if (!Number.isInteger(tokenVersion) || !Number.isFinite(expiresAt)) return { ok: false, reason: "MALFORMED" };
-    if (!constantTimeEquals(token.substring(lastSeparator + 1), hmac(body, challengeSecret(secret)))) {
-      return { ok: false, reason: "BAD_SIGNATURE" };
-    }
-    if (nowMs >= expiresAt) return { ok: false, reason: "EXPIRED" };
-    return { ok: true, username, tokenVersion };
   }
   function sessionExpiryFrom(nowMs, ttlMs) {
     return nowMs + ttlMs;
