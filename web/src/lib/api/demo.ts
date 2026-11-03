@@ -289,7 +289,11 @@ function createState(users: DemoUser[]): DemoState {
   };
 }
 
-const DEMO_TOKEN_PREFIX = 'demo-token:';
+/*
+ * ผูกรุ่นไว้ใน token: session ที่ค้างจากรุ่นก่อน (ตอนยังไม่มีหน้า PIN) จะใช้ไม่ได้
+ * ทุกคนต้องผ่านหน้ารหัสผ่าน + PIN ใหม่ — เปลี่ยนรุ่นพร้อม LOCAL_STORAGE_KEY ทุกครั้ง
+ */
+const DEMO_TOKEN_PREFIX = 'demo-session.v4:';
 
 export function createDemoTransport(): Transport {
   const ready = loadState();

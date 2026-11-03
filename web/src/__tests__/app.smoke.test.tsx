@@ -203,6 +203,13 @@ describe('สิทธิ์ผู้ใช้', () => {
     expect(screen.queryByLabelText(/^PIN/)).toBeNull();
   });
 
+  it('session ที่ค้างจากรุ่นก่อน (ไม่เคยผ่านหน้า PIN) ใช้ไม่ได้ ต้องเข้าสู่ระบบใหม่', async () => {
+    window.localStorage.setItem('mrb.session.token', 'demo-token:shoyu:1');
+    renderApp();
+    expect(await screen.findByLabelText('รหัสผ่าน', {}, { timeout: 5000 })).toBeDefined();
+    expect(screen.queryByRole('navigation', { name: 'เมนูหลัก' })).toBeNull();
+  });
+
   it('รหัสผ่านผิดไม่ได้ไปหน้า PIN และบอกข้อความเดียวกับชื่อผู้ใช้ผิด', async () => {
     renderApp();
     await enterPassword('shoyu', 'WrongPass99');
