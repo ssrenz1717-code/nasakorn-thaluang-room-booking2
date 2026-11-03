@@ -2,10 +2,9 @@
  * สคริปต์ติดตั้ง — รันด้วยมือจาก Apps Script Editor ไม่ใช่ผ่านหน้าเว็บ
  *
  * ลำดับการติดตั้ง:
- *  1. ตั้งค่า BOOTSTRAP_ADMIN_EMAIL และ OAUTH_CLIENT_ID ใน Script Properties
- *  2. รัน setupSystem() หนึ่งครั้ง
- *  3. รัน runSelfTest() เพื่อยืนยันว่าทุกอย่างพร้อม
- *  4. Deploy เป็น Web App
+ *  1. รัน setupSystem() หนึ่งครั้ง — ดู PIN แรกเข้าของบัญชีตั้งต้นใน Execution log
+ *  2. รัน runSelfTest() เพื่อยืนยันว่าทุกอย่างพร้อม
+ *  3. Deploy เป็น Web App
  *
  * ฟังก์ชันในไฟล์นี้ปลอดภัยที่จะรันซ้ำ — ไม่มีการลบหรือเขียนทับข้อมูลที่มีอยู่
  */
@@ -27,13 +26,16 @@ function setupSystem() {
 
   // 2) กุญแจลับสำหรับเซ็น session token
   if (getProp_(PROP_SESSION_SECRET) === '') {
-    const secret = Utilities.base64Encode(
-      Utilities.computeHmacSha256Signature(Utilities.getUuid(), Utilities.getUuid()),
-    );
-    scriptProps_().setProperty(PROP_SESSION_SECRET, secret);
+    scriptProps_().setProperty(PROP_SESSION_SECRET, newSecret_());
     log.push('สร้างกุญแจลับสำหรับ session แล้ว');
   } else {
     log.push('มีกุญแจลับอยู่แล้ว (ไม่สร้างใหม่ เพราะจะทำให้ทุกคนหลุดออกจากระบบ)');
+  }
+
+  // 2.1) กุญแจลับสำหรับ hash PIN
+  if (getProp_(PROP_PIN_PEPPER) === '') {
+    scriptProps_().setProperty(PROP_PIN_PEPPER, newSecret_());
+    log.push('สร้างกุญแจลับสำหรับ PIN แล้ว');
   }
 
   // 3) ชีตทั้งหมด
@@ -58,17 +60,52 @@ function setupSystem() {
     log.push('สร้างตัวนับเวอร์ชันข้อมูลแล้ว');
   }
 
-  // 6) ตรวจค่าที่ต้องตั้งด้วยมือ
-  if (getProp_(PROP_BOOTSTRAP_ADMIN) === '') {
-    log.push('[ต้องทำ] ยังไม่ได้ตั้ง BOOTSTRAP_ADMIN_EMAIL — ใส่อีเมล Google ของคุณใน Script Properties');
-  }
-  if (getProp_(PROP_OAUTH_CLIENT_ID) === '') {
-    log.push('[ต้องทำ] ยังไม่ได้ตั้ง OAUTH_CLIENT_ID — สร้าง OAuth Client ID ใน Google Cloud Console');
-  }
+  // 6) บัญชีตั้งต้น (ผู้ดูแล + ผู้ลงนาม 3 ขั้น)
+  log.push(...seedAccounts());
 
   const report = log.join('\n');
   console.log(report);
   return report;
+}
+
+function newSecret_() {
+  return Utilities.base64Encode(
+    Utilities.computeHmacSha256Signature(Utilities.getUuid(), Utilities.getUuid()),
+  );
+}
+
+/** PIN สุ่ม 6 หลักจากตัวสุ่มที่ปลอดภัย (UUID v4) และผ่านกฎ PIN เดาง่าย */
+function randomPin_() {
+  for (;;) {
+    const digits = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid())
+      .slice(0, Domain.PIN_LENGTH)
+      .map(function (byte) { return String((byte + 256) % 10); })
+      .join('');
+    if (Domain.pinProblem(digits) === null) return digits;
+  }
+}
+
+/**
+ * สร้างบัญชีตั้งต้นที่ยังไม่มี (ไม่แตะบัญชีที่มีแล้ว) พร้อม PIN สุ่ม
+ * PIN แสดงใน log ครั้งเดียวตอนสร้าง — แจ้งเจ้าของบัญชีแล้วให้ผู้ดูแลรีเซ็ตได้ทุกเมื่อ
+ */
+function seedAccounts() {
+  const log = [];
+  const now = nowIso_();
+  Domain.COLLEGE_ACCOUNTS.forEach(function (account) {
+    if (findByKey_(Domain.SHEET_USERS, account.username) !== null) {
+      log.push(`มีบัญชี ${account.username} อยู่แล้ว`);
+      return;
+    }
+    const pin = randomPin_();
+    appendObject_(Domain.SHEET_USERS, Object.assign({
+      username: account.username, displayName: account.displayName, department: account.department,
+      role: account.role, status: 'active', allowedRoomIds: '', tokenVersion: 1,
+      lastLoginAt: '', createdAt: now, updatedAt: now,
+    }, newPinCredential_(account.username, pin)));
+    log.push(`สร้างบัญชี ${account.username} (${account.displayName}) PIN แรกเข้า: ${pin}`);
+  });
+  return log;
 }
 
 /**
@@ -144,10 +181,9 @@ function migrateSheets() {
 function showConfig() {
   const secret = getProp_(PROP_SESSION_SECRET);
   const report = [
-    `SPREADSHEET_ID       : ${getProp_(PROP_SPREADSHEET_ID) || '(ยังไม่ตั้ง)'}`,
-    `OAUTH_CLIENT_ID      : ${getProp_(PROP_OAUTH_CLIENT_ID) || '(ยังไม่ตั้ง)'}`,
-    `BOOTSTRAP_ADMIN_EMAIL: ${getProp_(PROP_BOOTSTRAP_ADMIN) || '(ยังไม่ตั้ง)'}`,
-    `SESSION_SECRET       : ${secret === '' ? '(ยังไม่ตั้ง)' : `ตั้งแล้ว (${secret.length} ตัวอักษร)`}`,
+    `SPREADSHEET_ID : ${getProp_(PROP_SPREADSHEET_ID) || '(ยังไม่ตั้ง)'}`,
+    `SESSION_SECRET : ${secret === '' ? '(ยังไม่ตั้ง)' : `ตั้งแล้ว (${secret.length} ตัวอักษร)`}`,
+    `PIN_PEPPER     : ${getProp_(PROP_PIN_PEPPER) === '' ? '(ยังไม่ตั้ง)' : 'ตั้งแล้ว'}`,
   ].join('\n');
   console.log(report);
   return report;

@@ -80,7 +80,7 @@ function apiHandlers_() {
       return { pong: true, serverTime: nowIso_() };
     },
     login: function (payload) {
-      return login_(payload && payload.idToken);
+      return login_(payload || {});
     },
 
     // ต้องล็อกอิน
@@ -106,6 +106,13 @@ function apiHandlers_() {
     announcements: function (payload, token) { return listAnnouncements_(authenticate_(token)); },
     saveAnnouncement: function (payload, token) { return saveAnnouncement_(requireAdmin_(token), payload || {}); },
     archiveAnnouncement: function (payload, token) { return archiveAnnouncement_(requireAdmin_(token), payload || {}); },
+
+    // จัดการผู้ใช้ — เฉพาะผู้ดูแล
+    users: function (payload, token) { requireAdmin_(token); return listUsers_(); },
+    createUser: function (payload, token) { return createUser_(requireAdmin_(token), payload || {}); },
+    updateUser: function (payload, token) { return updateUser_(requireAdmin_(token), payload || {}); },
+    resetUserPin: function (payload, token) { return resetUserPin_(requireAdmin_(token), payload || {}); },
+    deleteUser: function (payload, token) { return deleteUser_(requireAdmin_(token), payload || {}); },
   };
 }
 

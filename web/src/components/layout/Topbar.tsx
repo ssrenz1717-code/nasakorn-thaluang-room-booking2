@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarCheck2, Check, LogOut, Settings } from 'lucide-react';
-import { DEMO_ACCOUNTS } from '../../lib/api/demo';
+import { CalendarCheck2, LogOut, Settings } from 'lucide-react';
 import { USER_ROLE_LABEL_TH } from '@shared/schemas/user';
 import { cn } from '../../lib/cn';
 import { useApp } from '../../app/providers/AppProvider';
 import { ConnectionSettingsDialog } from './ConnectionSettingsDialog';
 
 export function Topbar() {
-  const { user, signOut, isDemo, switchDemoAccount } = useApp();
+  const { user, signOut } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -102,38 +101,12 @@ export function Topbar() {
             >
               <div className="px-2.5 py-2">
                 <p className="truncate text-sm font-medium text-ink">{user?.displayName}</p>
-                <p className="truncate text-xs text-ink-subtle">{user?.email}</p>
+                <p className="truncate text-xs text-ink-subtle">ชื่อผู้ใช้ {user?.email}</p>
                 {user !== null && user.department !== '' && (
                   <p className="mt-0.5 truncate text-xs text-ink-subtle">{user.department}</p>
                 )}
               </div>
               <hr className="my-1 border-line" />
-              {/* ยังไม่เชื่อม Google: สลับบัญชีตัวอย่างเพื่อลองส่งคำขอ แล้วลงนามทีละขั้นด้วยคนละบัญชี */}
-              {isDemo && (
-                <>
-                  <p className="px-2.5 pb-1 pt-1.5 text-xs text-ink-subtle">สลับบัญชี (ลองขั้นตอนอนุมัติ)</p>
-                  {DEMO_ACCOUNTS.map((account) => (
-                    <button
-                      key={account.email}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={account.email === user?.email}
-                      onClick={() => {
-                        setMenuOpen(false);
-                        if (account.email !== user?.email) void switchDemoAccount(account.email);
-                      }}
-                      className="flex min-h-11 w-full items-center gap-2.5 rounded-inner px-2.5 text-left text-sm transition-colors hover:bg-neutral-soft"
-                    >
-                      <Check className={cn('size-4 shrink-0 text-brand', account.email === user?.email ? 'opacity-100' : 'opacity-0')} aria-hidden="true" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-ink">{account.displayName}</span>
-                        <span className="block truncate text-xs text-ink-subtle">{USER_ROLE_LABEL_TH[account.role]}</span>
-                      </span>
-                    </button>
-                  ))}
-                  <hr className="my-1 border-line" />
-                </>
-              )}
               <button
                 type="button"
                 role="menuitem"

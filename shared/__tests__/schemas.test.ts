@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_SYSTEM_SETTINGS, validateSystemSettings } from '../schemas/settings';
 import { validateRoomInput } from '../schemas/room';
 import { validateBookingRequest, validateDecideBookingInput } from '../schemas/booking';
-import { validateSetUserRoleInput } from '../schemas/user';
 import type { FieldIssue } from '../validate/check';
 
 const fields = (issues: FieldIssue[]): string[] => issues.map((issue) => issue.field).sort();
@@ -195,13 +194,5 @@ describe('ตรวจคำขอจอง', () => {
     expect(validateDecideBookingInput({ bookingId: 'b1', decision: 'approve' }).ok).toBe(true);
     expect(validateDecideBookingInput({ bookingId: 'b1', decision: 'maybe' }).ok).toBe(false);
     expect(validateDecideBookingInput({ bookingId: '', decision: 'approve' }).ok).toBe(false);
-  });
-});
-
-describe('ตรวจการตั้งสิทธิ์ผู้ใช้', () => {
-  it('รับอีเมลที่ถูกต้องและสิทธิ์ที่มีอยู่จริง', () => {
-    expect(validateSetUserRoleInput({ email: 'a@b.co', role: 'admin' }).ok).toBe(true);
-    expect(validateSetUserRoleInput({ email: 'a@b.co', role: 'superadmin' }).ok).toBe(false);
-    expect(validateSetUserRoleInput({ email: 'ไม่ใช่อีเมล', role: 'staff' }).ok).toBe(false);
   });
 });

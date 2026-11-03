@@ -8,7 +8,6 @@
 
 export interface AppConfig {
   apiUrl: string;
-  googleClientId: string;
   /** เชื่อมต่อ server จริงได้หรือยัง */
   isConnected: boolean;
   /** ผู้ใช้ขอโหมดสาธิตเองผ่าน ?demo=1 */
@@ -25,7 +24,6 @@ function isPlaceholder(value: string): boolean {
 
 export function readAppConfig(): AppConfig {
   const apiUrl = (import.meta.env.VITE_API_URL ?? '').trim();
-  const googleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID ?? '').trim();
 
   const isDemoRequested =
     typeof window !== 'undefined' &&
@@ -33,8 +31,7 @@ export function readAppConfig(): AppConfig {
 
   return {
     apiUrl,
-    googleClientId,
-    isConnected: !isPlaceholder(apiUrl) && !isPlaceholder(googleClientId),
+    isConnected: !isPlaceholder(apiUrl),
     isDemoRequested,
   };
 }

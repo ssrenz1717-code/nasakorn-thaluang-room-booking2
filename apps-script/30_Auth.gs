@@ -2,9 +2,9 @@
  * การยืนยันตัวตนและสิทธิ์
  *
  * ขั้นตอน:
- *  1. หน้าเว็บให้ผู้ใช้กด "เข้าสู่ระบบด้วย Google" ได้ ID token มาจาก Google
- *  2. ส่ง ID token มาที่นี่ -> เราถามกับ Google ว่า token นี้จริงไหมและเป็นของใคร
- *  3. ตรวจว่าอีเมลนั้นอยู่ในชีต Users และสถานะใช้งานได้
+ *  1. ผู้ใช้กรอกชื่อผู้ใช้ + PIN 6 หลัก (ผู้ดูแลสร้างบัญชีและตั้ง PIN ให้ในหน้าจัดการผู้ใช้)
+ *  2. เทียบ HMAC ของ PIN กับค่าในชีต Users — ชีตไม่มี PIN จริงเก็บอยู่
+ *  3. ผิดติดกัน PIN_MAX_FAILURES ครั้ง บัญชีนั้นล็อก PIN_LOCK_MINUTES นาที
  *  4. ออก session token ของเราเองกลับไป (อายุ 12 ชม.) ใช้ในคำขอต่อ ๆ ไป
  *
  * กฎเหล็ก: ทุกฟังก์ชันที่แก้ข้อมูลต้องเรียก authenticate_() แล้วใช้ "สิทธิ์จากชีต"
@@ -48,151 +48,106 @@ function hmacBase64_(message, secret) {
   return Utilities.base64Encode(signature);
 }
 
-/**
- * ตรวจ ID token กับ Google
- * เรียก UrlFetch แค่ตอน login ไม่ใช่ทุกคำขอ จึงไม่กินโควตา (20,000 ครั้ง/วัน)
- */
-function verifyGoogleIdToken_(idToken) {
-  if (typeof idToken !== 'string' || idToken === '') {
-    throw appError_(ERROR_CODES.BAD_REQUEST, 'ไม่พบข้อมูลการเข้าสู่ระบบ');
-  }
-
-  // ตรวจเพดานก่อนเรียก Google เพื่อให้การยิงรัว ๆ ไม่กินโควตา UrlFetch เลย
-  assertLoginAllowed_();
-
-  const clientId = requireProp_(
-    PROP_OAUTH_CLIENT_ID,
-    'สร้าง OAuth Client ID (ประเภท Web application) ใน Google Cloud Console แล้วใส่ค่าใน Script Properties',
-  );
-
-  const response = UrlFetchApp.fetch(
-    `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
-    { muteHttpExceptions: true },
-  );
-
-  if (response.getResponseCode() !== 200) {
-    recordLoginFailure_();
-    throw appError_(ERROR_CODES.UNAUTHENTICATED, 'การเข้าสู่ระบบไม่ถูกต้องหรือหมดอายุ กรุณาลองใหม่');
-  }
-
-  let info;
-  try {
-    info = JSON.parse(response.getContentText());
-  } catch (error) {
-    recordLoginFailure_();
-    throw appError_(ERROR_CODES.UNAUTHENTICATED, 'ข้อมูลการเข้าสู่ระบบอ่านไม่ได้');
-  }
-
-  // ตรวจว่า token ออกให้แอปของเราจริง ไม่ใช่ token ของแอปอื่นที่ถูกนำมาสวม
-  if (info.aud !== clientId) {
-    recordLoginFailure_();
-    throw appError_(ERROR_CODES.UNAUTHENTICATED, 'ข้อมูลการเข้าสู่ระบบไม่ได้ออกให้ระบบนี้');
-  }
-  if (String(info.email_verified) !== 'true') {
-    recordLoginFailure_();
-    throw appError_(ERROR_CODES.UNAUTHENTICATED, 'อีเมลนี้ยังไม่ได้ยืนยันกับ Google');
-  }
-  const email = String(info.email || '').trim().toLowerCase();
-  if (email === '') {
-    recordLoginFailure_();
-    throw appError_(ERROR_CODES.UNAUTHENTICATED, 'ไม่พบอีเมลในข้อมูลการเข้าสู่ระบบ');
-  }
-
-  return { email: email, name: String(info.name || ''), picture: String(info.picture || '') };
-}
-
 function sessionSecret_() {
   return requireProp_(PROP_SESSION_SECRET, 'รัน setupSystem() เพื่อสร้างกุญแจลับให้อัตโนมัติ');
 }
 
-/**
- * เข้าสู่ระบบ
- * ผู้ใช้ที่ไม่มีในชีต Users จะถูกปฏิเสธ ยกเว้นอีเมลที่ตั้งเป็นผู้ดูแลคนแรก
- * ซึ่งจะถูกสร้างเป็น admin ให้อัตโนมัติครั้งเดียว (ขั้นตอนสร้าง admin คนแรกอย่างปลอดภัย)
+function pinPepper_() {
+  return requireProp_(PROP_PIN_PEPPER, 'รัน setupSystem() เพื่อสร้างกุญแจลับให้อัตโนมัติ');
+}
+
+/** ค่า hash ของ PIN ที่เก็บในชีต — salt สุ่มต่อบัญชี, pepper อยู่ใน Script Properties */
+function pinHash_(username, salt, pin) {
+  return hmacBase64_(Domain.pinDigestMessage(username, salt, pin), pinPepper_());
+}
+
+function newPinCredential_(username, pin) {
+  const salt = Utilities.getUuid().replace(/-/g, '');
+  return { pinSalt: salt, pinHash: pinHash_(username, salt, pin) };
+}
+
+function pinFailureKey_(username) {
+  return `pin_fail_${Utilities.base64EncodeWebSafe(username)}`;
+}
+
+/*
+ * ตัวนับ PIN ผิดรายบัญชี (นับทั้งชื่อที่ไม่มีในระบบด้วย ผู้โจมตีจะแยกไม่ออกว่าชื่อไหนมีจริง)
+ * หมดอายุเองหลัง PIN_LOCK_MINUTES นาทีนับจากครั้งที่ผิดล่าสุด
  */
-function login_(idToken) {
-  const identity = verifyGoogleIdToken_(idToken);
+function pinFailures_(username) {
+  const cached = CacheService.getScriptCache().get(pinFailureKey_(username));
+  return cached === null ? 0 : Number(cached) || 0;
+}
 
-  return withScriptLock_(function () {
-    let user = findByKey_(Domain.SHEET_USERS, identity.email);
+function recordPinFailure_(username) {
+  CacheService.getScriptCache().put(
+    pinFailureKey_(username), String(pinFailures_(username) + 1), Domain.PIN_LOCK_MINUTES * 60,
+  );
+  recordLoginFailure_();
+}
 
-    if (user === null) {
-      const bootstrapAdmin = getProp_(PROP_BOOTSTRAP_ADMIN).trim().toLowerCase();
+/** เข้าสู่ระบบด้วยชื่อผู้ใช้ + PIN — ข้อความผิดพลาดเหมือนกันทั้งชื่อผิดและ PIN ผิด */
+function login_(raw) {
+  const parsed = Domain.validateLoginInput(raw);
+  if (!parsed.ok) throw appError_(ERROR_CODES.VALIDATION, 'กรุณากรอกชื่อผู้ใช้และ PIN', parsed.issues);
+  const username = parsed.value.username;
 
-      /*
-       * สร้างผู้ดูแลคนแรกได้เฉพาะตอนที่ "ยังไม่มีผู้ดูแลในระบบเลย"
-       *
-       * ถ้าตรวจแค่ว่าอีเมลตรงกับ BOOTSTRAP_ADMIN_EMAIL จะเกิดช่องโหว่:
-       * ผู้ดูแลที่ถูกถอดถอน (ลบแถวออกจากชีต Users) จะล็อกอินกลับเข้ามาเป็น admin
-       * ได้ใหม่ทันที เพราะค่า property ยังค้างอยู่ — เท่ากับประตูหลังที่ปิดไม่ลง
-       */
-      const hasAnyAdmin = adminExists_();
-
-      if (bootstrapAdmin !== '' && bootstrapAdmin === identity.email && !hasAnyAdmin) {
-        user = {
-          email: identity.email,
-          displayName: identity.name || identity.email,
-          department: '',
-          role: 'admin',
-          status: 'active',
-          tokenVersion: 1,
-          lastLoginAt: nowIso_(),
-          createdAt: nowIso_(),
-          updatedAt: nowIso_(),
-        };
-        appendObject_(Domain.SHEET_USERS, user);
-        audit_(identity.email, 'user.bootstrapAdmin', 'user', identity.email, {
-          note: 'สร้างผู้ดูแลคนแรกจากค่า BOOTSTRAP_ADMIN_EMAIL',
-        });
-        bumpDataVersion_();
-      } else {
-        throw appError_(
-          ERROR_CODES.FORBIDDEN,
-          'อีเมลนี้ยังไม่ได้รับสิทธิ์เข้าใช้ระบบ กรุณาติดต่อผู้ดูแลระบบ',
-        );
-      }
-    }
-
-    if (String(user.status) !== 'active') {
-      throw appError_(ERROR_CODES.FORBIDDEN, 'บัญชีนี้ถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
-    }
-
-    updateByKey_(Domain.SHEET_USERS, identity.email, { lastLoginAt: nowIso_() });
-
-    const now = serverNow_().getTime();
-    const token = Domain.createSessionToken(
-      {
-        email: String(user.email),
-        role: Domain.normalizeUserRole(user.role),
-        tokenVersion: Number(user.tokenVersion) || 1,
-        expiresAt: Domain.sessionExpiryFrom(now, SESSION_TTL_MS),
-      },
-      sessionSecret_(),
-      hmacBase64_,
+  assertLoginAllowed_();
+  if (pinFailures_(username) >= Domain.PIN_MAX_FAILURES) {
+    throw appError_(
+      ERROR_CODES.BUSY,
+      `ใส่ PIN ผิดหลายครั้ง บัญชีนี้ถูกล็อกชั่วคราว ${Domain.PIN_LOCK_MINUTES} นาที หรือให้ผู้ดูแลรีเซ็ต PIN`,
     );
+  }
 
-    return { token: token, user: publicUser_(user) };
+  const user = findByKey_(Domain.SHEET_USERS, username);
+  const hash = user === null ? '' : String(user.pinHash || '');
+  const ok = hash !== '' && Domain.constantTimeEqual(pinHash_(username, String(user.pinSalt || ''), parsed.value.pin), hash);
+  if (!ok) {
+    recordPinFailure_(username);
+    throw appError_(ERROR_CODES.UNAUTHENTICATED, 'ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง');
+  }
+  if (String(user.status) !== 'active') {
+    throw appError_(ERROR_CODES.FORBIDDEN, 'บัญชีนี้ถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
+  }
+
+  CacheService.getScriptCache().remove(pinFailureKey_(username));
+  withScriptLock_(function () {
+    updateByKey_(Domain.SHEET_USERS, username, { lastLoginAt: nowIso_() });
+  });
+
+  const token = Domain.createSessionToken(
+    {
+      email: username,
+      role: Domain.normalizeUserRole(user.role),
+      tokenVersion: Number(user.tokenVersion) || 1,
+      expiresAt: Domain.sessionExpiryFrom(serverNow_().getTime(), SESSION_TTL_MS),
+    },
+    sessionSecret_(),
+    hmacBase64_,
+  );
+  return { token: token, user: publicUser_(user) };
+}
+
+/** มีผู้ดูแลที่ใช้งานได้อยู่ในระบบแล้วหรือยัง */
+function adminExists_() {
+  return readAll_(Domain.SHEET_USERS).objects.some(function (user) {
+    return String(user.role) === 'admin' && String(user.status) === 'active';
   });
 }
 
-/** มีผู้ดูแลที่ใช้งานได้อยู่ในระบบแล้วหรือยัง — ใช้คุมการสร้างผู้ดูแลคนแรก */
-function adminExists_() {
-  const all = readAll_(Domain.SHEET_USERS);
-  for (let i = 0; i < all.objects.length; i += 1) {
-    const user = all.objects[i];
-    if (String(user.role) === 'admin' && String(user.status) === 'active') return true;
-  }
-  return false;
-}
-
-/** ข้อมูลผู้ใช้ที่ส่งกลับหน้าเว็บได้ — ไม่มีฟิลด์ภายในอย่าง tokenVersion ติดไปด้วย */
+/**
+ * ข้อมูลผู้ใช้ที่ส่งกลับหน้าเว็บได้ — ไม่มี pinHash/pinSalt/tokenVersion ติดไปด้วย
+ * ฟิลด์ email ของหน้าเว็บคือรหัสบัญชี (ชื่อผู้ใช้) คงชื่อเดิมไว้เพราะการจองและประวัติการลงนามอ้างฟิลด์นี้
+ */
 function publicUser_(user) {
   return {
-    email: String(user.email),
-    displayName: String(user.displayName || user.email),
+    email: String(user.username),
+    displayName: String(user.displayName || user.username),
     department: String(user.department || ''),
     role: Domain.normalizeUserRole(user.role),
     status: String(user.status || 'active'),
+    allowedRoomIds: Domain.readList(user, 'allowedRoomIds'),
   };
 }
 

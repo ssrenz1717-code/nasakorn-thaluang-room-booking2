@@ -51,44 +51,150 @@ export function validateUserProfileInput(raw: unknown): ValidationResult<UserPro
   });
 }
 
+/* ---------- บัญชีผู้ใช้ (ชื่อผู้ใช้ + PIN) ---------- */
+
+/** ชื่อผู้ใช้: a-z 0-9 . _ - ยาว 3–32 ตัว ไม่สนตัวพิมพ์เล็กใหญ่ (เก็บเป็นตัวเล็กเสมอ) */
+export const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
+
+export function normalizeUsername(raw: unknown): string {
+  return String(raw ?? '').trim().toLowerCase();
+}
+
+export const PIN_LENGTH = 6;
+
 /**
- * role และ status เปลี่ยนได้จากฟังก์ชันฝั่ง server เท่านั้น
- * หน้าเว็บส่งได้แค่สองฟิลด์ใน validateUserProfileInput ข้างบน
+ * ตรวจ PIN ใหม่ — คืนข้อความไทยเมื่อใช้ไม่ได้, null เมื่อผ่าน
+ * กัน PIN ที่คนเดาก่อนเสมอ: เลขซ้ำทั้งหมด (000000) และเลขเรียง (123456, 654321)
  */
-export interface SetUserRoleInput {
-  email: string;
+export function pinProblem(pin: unknown): string | null {
+  if (typeof pin !== 'string' || !new RegExp(`^\\d{${PIN_LENGTH}}$`).test(pin)) {
+    return `PIN ต้องเป็นตัวเลข ${PIN_LENGTH} หลัก`;
+  }
+  if (/^(\d)\1+$/.test(pin)) return 'PIN ห้ามเป็นเลขเดียวกันทั้งหมด';
+  const steps = new Set<number>();
+  for (let i = 1; i < pin.length; i += 1) steps.add(Number(pin[i]) - Number(pin[i - 1]));
+  if (steps.size === 1 && (steps.has(1) || steps.has(-1))) return 'PIN ห้ามเป็นเลขเรียงกัน';
+  return null;
+}
+
+/** ข้อความที่นำไป HMAC เป็นค่า hash ของ PIN — ใช้รูปแบบเดียวกันทั้ง Apps Script และโหมดทดลอง */
+export function pinDigestMessage(username: string, salt: string, pin: string): string {
+  return `pin|${normalizeUsername(username)}|${salt}|${pin}`;
+}
+
+/** เทียบสตริงโดยใช้เวลาเท่ากันทุกกรณี กันการเดา hash จากเวลาที่ตอบ */
+export function constantTimeEqual(a: string, b: string): boolean {
+  let diff = a.length ^ b.length;
+  const length = Math.max(a.length, b.length);
+  for (let i = 0; i < length; i += 1) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  return diff === 0;
+}
+
+/** ผิดกี่ครั้งติดกันแล้วล็อกบัญชี และล็อกนานเท่าไร */
+export const PIN_MAX_FAILURES = 5;
+export const PIN_LOCK_MINUTES = 15;
+
+/** ห้องที่ผู้ใช้จองได้ — รายการว่าง = ทุกห้อง / ผู้ดูแลเห็นทุกห้องเสมอ */
+export function canUseRoom(user: { role: UserRole; allowedRoomIds?: readonly string[] }, roomId: string): boolean {
+  if (user.role === 'admin') return true;
+  const allowed = user.allowedRoomIds ?? [];
+  return allowed.length === 0 || allowed.includes(roomId);
+}
+
+export interface LoginInput {
+  username: string;
+  pin: string;
+}
+
+export function validateLoginInput(raw: unknown): ValidationResult<LoginInput> {
+  const input = asRecord(raw);
+  const check = new Check();
+  const username = normalizeUsername(input.username);
+  if (username === '') check.fail('username', 'กรุณากรอกชื่อผู้ใช้');
+  const pin = typeof input.pin === 'string' ? input.pin.trim() : '';
+  if (pin === '') check.fail('pin', 'กรุณากรอก PIN');
+  return check.result({ username, pin });
+}
+
+export interface UserAccountInput {
+  username: string;
+  displayName: string;
+  department: string;
   role: UserRole;
-}
-
-export function validateSetUserRoleInput(raw: unknown): ValidationResult<SetUserRoleInput> {
-  const input = asRecord(raw);
-  const check = new Check();
-  return check.result({
-    email: check.string('email', input.email, {
-      label: 'อีเมล',
-      max: 200,
-      pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-      patternMessage: 'อีเมลไม่ถูกต้อง',
-    }),
-    role: check.oneOf('role', input.role, USER_ROLES, { label: 'สิทธิ์การใช้งาน' }),
-  });
-}
-
-export interface SetUserStatusInput {
-  email: string;
   status: UserStatus;
+  allowedRoomIds: string[];
 }
 
-export function validateSetUserStatusInput(raw: unknown): ValidationResult<SetUserStatusInput> {
+function roomIdList(check: Check, raw: unknown): string[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || raw.some((item) => typeof item !== 'string' || item.trim() === '' || item.includes(',') || item.length > 60)) {
+    check.fail('allowedRoomIds', 'รายการห้องไม่ถูกต้อง');
+    return [];
+  }
+  return [...new Set(raw.map((item: string) => item.trim()))];
+}
+
+/** เพิ่ม/แก้บัญชี — สร้างใหม่ต้องมี PIN แรกเข้า (`pin`), แก้ไขไม่ต้องส่ง */
+export function validateUserAccountInput(
+  raw: unknown,
+  options: { requirePin: boolean },
+): ValidationResult<UserAccountInput & { pin: string }> {
   const input = asRecord(raw);
   const check = new Check();
+  const username = normalizeUsername(input.username);
+  if (!USERNAME_PATTERN.test(username)) {
+    check.fail('username', 'ชื่อผู้ใช้ต้องเป็น a-z, 0-9, จุด, ขีด ยาว 3–32 ตัว');
+  }
+  const pin = typeof input.pin === 'string' ? input.pin.trim() : '';
+  if (options.requirePin) {
+    const problem = pinProblem(pin);
+    if (problem !== null) check.fail('pin', problem);
+  }
   return check.result({
-    email: check.string('email', input.email, {
-      label: 'อีเมล',
-      max: 200,
-      pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-      patternMessage: 'อีเมลไม่ถูกต้อง',
-    }),
-    status: check.oneOf('status', input.status, USER_STATUSES, { label: 'สถานะผู้ใช้' }),
+    username,
+    displayName: check.string('displayName', input.displayName, { label: 'ชื่อ-นามสกุล', min: 1, max: 100 }),
+    department: check.string('department', input.department, { label: 'หน่วยงาน', max: 100, fallback: '' }),
+    role: check.oneOf('role', input.role, USER_ROLES, { label: 'สิทธิ์การใช้งาน' }),
+    status: check.oneOf('status', input.status, USER_STATUSES, { label: 'สถานะผู้ใช้', fallback: 'active' }),
+    allowedRoomIds: roomIdList(check, input.allowedRoomIds),
+    pin,
   });
 }
+
+export function validateResetPinInput(raw: unknown): ValidationResult<{ username: string; pin: string }> {
+  const input = asRecord(raw);
+  const check = new Check();
+  const username = normalizeUsername(input.username);
+  if (username === '') check.fail('username', 'ไม่ได้ระบุผู้ใช้');
+  const pin = typeof input.pin === 'string' ? input.pin.trim() : '';
+  const problem = pinProblem(pin);
+  if (problem !== null) check.fail('pin', problem);
+  return check.result({ username, pin });
+}
+
+/**
+ * กันระบบไม่มีผู้ดูแลเหลือ: คืนข้อความเมื่อการเปลี่ยนนี้ทำให้ไม่เหลือแอดมินที่ใช้งานได้
+ * `next` = null หมายถึงลบบัญชีนั้นทิ้ง
+ */
+export function lastAdminProblem(
+  users: readonly { username: string; role: string; status: string }[],
+  username: string,
+  next: { role: string; status: string } | null,
+): string | null {
+  const remaining = users.filter((user) => {
+    const view = user.username === username ? next : user;
+    return view !== null && view.role === 'admin' && view.status === 'active';
+  });
+  return remaining.length === 0 ? 'ต้องเหลือผู้ดูแลระบบที่ใช้งานได้อย่างน้อย 1 คน' : null;
+}
+
+/**
+ * บัญชีตั้งต้นของวิทยาลัย — สคริปต์ติดตั้งสร้างให้ (สุ่ม PIN แล้วพิมพ์ลง log ให้เจ้าของสคริปต์)
+ * ชื่อผู้ลงนามตรงกับแบบคำขอใช้ห้องประชุม (domain/approval.ts)
+ */
+export const COLLEGE_ACCOUNTS: readonly { username: string; displayName: string; department: string; role: UserRole }[] = [
+  { username: 'shoyu', displayName: 'shoyu', department: 'ผู้ดูแลระบบ', role: 'admin' },
+  { username: 'watcharapong', displayName: 'นายวัชรพงศ์ โสภา', department: 'งานศูนย์ดิจิทัลและสื่อสารองค์กร', role: 'inspector' },
+  { username: 'ekkarat', displayName: 'นายเอกราช เขียวทอง', department: 'งานศูนย์ดิจิทัลและสื่อสารองค์กร', role: 'endorser' },
+  { username: 'chatree', displayName: 'นายชาตรี เริงชัยภูมิ', department: 'ฝ่ายพัฒนายุทธศาสตร์และแผนงาน', role: 'director' },
+];

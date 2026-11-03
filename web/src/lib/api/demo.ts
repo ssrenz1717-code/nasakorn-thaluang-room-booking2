@@ -17,11 +17,15 @@ import { validateBookingRules } from '@shared/domain/booking-rules';
 import { findConflicts } from '@shared/domain/overlap';
 import { readLocal, writeLocal } from '../storage';
 import { busySlotsFor } from '@shared/domain/availability';
-import { ApiError, type SessionUser, type Transport, type VersionResult } from './types';
+import { ApiError, type AdminUser, type SessionUser, type Transport, type VersionResult } from './types';
 import { activeAnnouncements, validateAnnouncementInput, type Announcement } from '@shared/schemas/announcement';
 import { canSeeAllBookings, decideApprovalStep, type ApprovalEntry } from '@shared/domain/approval';
 import { COLLEGE_ROOMS, OPEN_LOCATION_ROOM_CODE, isOpenLocationRoom } from '@shared/schemas/room';
 import { validateDecideBookingInput } from '@shared/schemas/booking';
+import {
+  COLLEGE_ACCOUNTS, PIN_LOCK_MINUTES, PIN_MAX_FAILURES, canUseRoom, constantTimeEqual, lastAdminProblem,
+  normalizeUsername, pinDigestMessage, validateLoginInput, validateResetPinInput, validateUserAccountInput,
+} from '@shared/schemas/user';
 
 export interface DemoRoom {
   roomId: string;
@@ -65,40 +69,68 @@ export interface DemoBooking {
   createdAt?: string;
 }
 
+interface DemoUser extends SessionUser {
+  pinHash: string;
+  pinSalt: string;
+  tokenVersion: number;
+  lastLoginAt: string;
+  createdAt: string;
+}
+
 interface DemoState {
   settings: SystemSettings;
-  users: SessionUser[];
+  users: DemoUser[];
   rooms: DemoRoom[];
   bookings: DemoBooking[];
   announcements: Announcement[];
   dataVersion: number;
 }
 
-const DEMO_ADMIN: SessionUser = {
-  email: 'admin@example.com',
-  displayName: 'ผู้ดูแลระบบ',
-  department: 'แผนกวิชาเทคโนโลยีสารสนเทศ',
-  role: 'admin',
-  status: 'active',
-};
-
-const DEMO_STAFF: SessionUser = {
-  email: 'staff@example.com',
-  displayName: 'เจ้าหน้าที่',
-  department: 'แผนกวิชาการบัญชี',
-  role: 'staff',
-  status: 'active',
-};
-
-/** ผู้ลงนามอนุมัติ 3 ขั้นตามแบบคำขอ (ในระบบจริงผู้ดูแลกำหนด role ให้แต่ละบัญชีในชีต Users) */
-const DEMO_APPROVERS: SessionUser[] = [
-  { email: 'watcharapong@example.com', displayName: 'นายวัชรพงศ์ โสภา', department: '', role: 'inspector', status: 'active' },
-  { email: 'ekkarat@example.com', displayName: 'นายเอกราช เขียวทอง', department: '', role: 'endorser', status: 'active' },
-  { email: 'chatree@example.com', displayName: 'นายชาตรี เริงชัยภูมิ', department: '', role: 'director', status: 'active' },
+/**
+ * บัญชีทดลอง + PIN — ใช้เฉพาะโหมดข้อมูลในเบราว์เซอร์ (ข้อมูลอยู่ในเครื่องผู้เปิดเว็บเท่านั้น)
+ * ระบบจริงบน Apps Script สุ่ม PIN ให้ตอนติดตั้ง ไม่มี PIN ชุดนี้
+ */
+export const DEMO_LOGINS: readonly { username: string; pin: string; displayName: string; role: SessionUser['role'] }[] = [
+  ...COLLEGE_ACCOUNTS.map((account, index) => ({ ...account, pin: ['135790', '246801', '246802', '246803'][index] ?? '246809' })),
+  { username: 'teacher', pin: '246804', displayName: 'ครูทดลอง ใจดี', role: 'staff' },
 ];
 
-/** บัญชีที่สลับไปใช้ได้ในโหมดข้อมูลในเบราว์เซอร์ — ไว้ลองขั้นตอนอนุมัติทีละคน */
-export const DEMO_ACCOUNTS: readonly SessionUser[] = [DEMO_ADMIN, DEMO_STAFF, ...DEMO_APPROVERS];
+const DEMO_PEPPER = 'demo-local-pepper';
+
+async function demoPinHash(username: string, salt: string, pin: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', encoder.encode(DEMO_PEPPER), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(pinDigestMessage(username, salt, pin)));
+  return btoa(String.fromCharCode(...new Uint8Array(signature)));
+}
+
+async function demoCredential(username: string, pin: string): Promise<{ pinHash: string; pinSalt: string }> {
+  const pinSalt = crypto.randomUUID().replaceAll('-', '');
+  return { pinSalt, pinHash: await demoPinHash(username, pinSalt, pin) };
+}
+
+async function seedUsers(): Promise<DemoUser[]> {
+  const now = new Date().toISOString();
+  return Promise.all(DEMO_LOGINS.map(async (login) => {
+    const account = COLLEGE_ACCOUNTS.find((item) => item.username === login.username);
+    return {
+      email: login.username, displayName: login.displayName, department: account?.department ?? 'แผนกวิชาการบัญชี',
+      role: login.role, status: 'active' as const, allowedRoomIds: [],
+      tokenVersion: 1, lastLoginAt: '', createdAt: now, ...(await demoCredential(login.username, login.pin)),
+    };
+  }));
+}
+
+function sessionView(user: DemoUser): SessionUser {
+  const { email, displayName, department, role, status, allowedRoomIds } = user;
+  return { email, displayName, department, role, status, allowedRoomIds: [...allowedRoomIds] };
+}
+
+function adminView(user: DemoUser): AdminUser {
+  return { ...sessionView(user), hasPin: user.pinHash !== '', lastLoginAt: user.lastLoginAt, createdAt: user.createdAt };
+}
+
+const DEMO_APPROVERS = COLLEGE_ACCOUNTS.filter((account) => account.role !== 'admin');
 
 function seedRooms(): DemoRoom[] {
   // ห้องจริงของวิทยาลัย (รายชื่อเดียวกับที่ Apps Script ใช้สร้างชีต Rooms)
@@ -119,7 +151,7 @@ function seedAnnouncements(): Announcement[] {
   const now = new Date().toISOString();
   return [
     {
-      announcementId: 'demo-an-1', tone: 'notice', expiresOn: '', createdBy: 'admin@example.com', createdAt: now, updatedAt: now, archivedAt: '',
+      announcementId: 'demo-an-1', tone: 'notice', expiresOn: '', createdBy: 'shoyu', createdAt: now, updatedAt: now, archivedAt: '',
       title: 'ขอความร่วมมือคืนห้องตรงเวลา',
       body: 'ประชุมเสร็จแล้วกรุณาปิดแอร์ ปิดเครื่องฉายภาพ และแจ้งงานศูนย์ดิจิทัลฯ หากอุปกรณ์ชำรุด',
     },
@@ -129,7 +161,7 @@ function seedAnnouncements(): Announcement[] {
 /** ประวัติการลงนามของรายการที่ผ่านครบ 3 ขั้นแล้ว (หรือผ่านถึงขั้นที่กำหนด) */
 function signedLog(steps: number, at: string): ApprovalEntry[] {
   return DEMO_APPROVERS.slice(0, steps).map((user, index) => ({
-    step: index + 1, decision: 'approve', email: user.email, name: user.displayName, at, reason: '',
+    step: index + 1, decision: 'approve', email: user.username, name: user.displayName, at, reason: '',
   }));
 }
 
@@ -145,48 +177,48 @@ function seedBookings(): DemoBooking[] {
       ...common, bookingId: 'demo-bk-1', roomId: 'demo-room-1', dateKey: today, startMin: 9 * 60, endMin: 10 * 60 + 30,
       status: 'confirmed', approvalStep: 0, approvalLog: signedLog(3, signedAt),
       title: 'ประชุมครูและบุคลากรประจำเดือน', bookerName: 'อ.สมชาย ใจดี', requesterPosition: 'ครู', requesterPhone: '081-234-5678',
-      userEmail: 'admin@example.com', userName: 'ผู้ดูแลระบบ', department: 'แผนกวิชาเทคโนโลยีสารสนเทศ', attendees: 120,
+      userEmail: 'shoyu', userName: 'shoyu', department: 'แผนกวิชาเทคโนโลยีสารสนเทศ', attendees: 120,
       requestedFacilities: ['projector', 'soundSystem', 'microphone'], note: 'เตรียมสไลด์สรุปผลการดำเนินงาน',
     },
     {
       ...common, bookingId: 'demo-bk-2', roomId: 'demo-room-2', dateKey: today, startMin: 13 * 60, endMin: 14 * 60,
       status: 'confirmed', approvalStep: 0, approvalLog: signedLog(3, signedAt),
       title: 'ประชุมแผนกวิชาการบัญชี', bookerName: 'นางสาวกนกวรรณ ศรีสุข', requesterPosition: 'หัวหน้าแผนกวิชา', requesterPhone: '089-555-1234',
-      userEmail: 'staff@example.com', userName: 'เจ้าหน้าที่', department: 'แผนกวิชาการบัญชี', attendees: 12,
+      userEmail: 'teacher', userName: 'ครูทดลอง ใจดี', department: 'แผนกวิชาการบัญชี', attendees: 12,
       requestedFacilities: ['projector'],
     },
     {
       ...common, bookingId: 'demo-bk-3', roomId: 'demo-room-6', dateKey: today, startMin: 15 * 60, endMin: 17 * 60,
       status: 'confirmed', approvalStep: 0, approvalLog: signedLog(3, signedAt),
       title: 'อบรมการใช้งานระบบสารสนเทศ', bookerName: 'นายประเสริฐ มั่นคง', requesterPosition: 'ครู', requesterPhone: '086-111-2222',
-      userEmail: 'staff@example.com', userName: 'เจ้าหน้าที่', department: 'แผนกวิชาช่างไฟฟ้ากำลัง', attendees: 30,
+      userEmail: 'teacher', userName: 'ครูทดลอง ใจดี', department: 'แผนกวิชาช่างไฟฟ้ากำลัง', attendees: 30,
       requestedFacilities: ['internet', 'airConditioning'],
     },
     {
       ...common, bookingId: 'demo-bk-4', roomId: 'demo-room-3', dateKey: tomorrow, startMin: 10 * 60, endMin: 11 * 60,
       status: 'confirmed', approvalStep: 0, approvalLog: signedLog(3, signedAt),
       title: 'ประชุมคณะกรรมการบริหารสถานศึกษา', bookerName: 'อ.วิภาวรรณ แก้วมณี', requesterPosition: 'รองผู้อำนวยการ', requesterPhone: '081-999-0000',
-      userEmail: 'admin@example.com', userName: 'ผู้ดูแลระบบ', department: 'แผนกวิชาเทคโนโลยีสารสนเทศ', attendees: 10,
+      userEmail: 'shoyu', userName: 'shoyu', department: 'แผนกวิชาเทคโนโลยีสารสนเทศ', attendees: 10,
     },
     {
       ...common, bookingId: 'demo-bk-5', roomId: 'demo-room-2', dateKey: tomorrow, startMin: 11 * 60, endMin: 12 * 60,
       status: 'pending', approvalStep: 1, approvalLog: [],
       title: 'ประชุมเตรียมงานวันวิชาการ', bookerName: 'นางสุดารัตน์ บุญมา', requesterPosition: 'ครู', requesterPhone: '082-345-6789',
-      userEmail: 'staff@example.com', userName: 'เจ้าหน้าที่', department: 'แผนกวิชาการบัญชี', attendees: 25,
+      userEmail: 'teacher', userName: 'ครูทดลอง ใจดี', department: 'แผนกวิชาการบัญชี', attendees: 25,
       requestedFacilities: ['projector', 'microphone'], extraFurnitureCount: 10,
     },
     {
       ...common, bookingId: 'demo-bk-6', roomId: 'demo-room-5', dateKey: later, startMin: 9 * 60, endMin: 12 * 60,
       status: 'pending', approvalStep: 2, approvalLog: signedLog(1, signedAt),
       title: 'กิจกรรมปฐมนิเทศนักศึกษาฝึกงาน', bookerName: 'นายธนพล รุ่งเรือง', requesterPosition: 'ครูที่ปรึกษา', requesterPhone: '087-654-3210',
-      userEmail: 'staff@example.com', userName: 'เจ้าหน้าที่', department: 'แผนกวิชาช่างไฟฟ้ากำลัง', attendees: 200,
+      userEmail: 'teacher', userName: 'ครูทดลอง ใจดี', department: 'แผนกวิชาช่างไฟฟ้ากำลัง', attendees: 200,
       requestedFacilities: ['soundSystem', 'microphone'],
     },
     {
       ...common, bookingId: 'demo-bk-7', roomId: 'demo-room-1', dateKey: tomorrow, startMin: 14 * 60, endMin: 15 * 60 + 30,
       status: 'cancelled', approvalStep: 0, approvalLog: [],
       title: 'ซ้อมพิธีมอบประกาศนียบัตร', bookerName: 'นายธนพล รุ่งเรือง', requesterPosition: 'ครู', requesterPhone: '087-654-3210',
-      userEmail: 'staff@example.com', userName: 'เจ้าหน้าที่', department: 'แผนกวิชาช่างไฟฟ้ากำลัง', attendees: 60,
+      userEmail: 'teacher', userName: 'ครูทดลอง ใจดี', department: 'แผนกวิชาช่างไฟฟ้ากำลัง', attendees: 60,
     },
   ];
 }
@@ -198,15 +230,16 @@ function seedBookings(): DemoBooking[] {
  * (แต่ละคนเห็นข้อมูลของตัวเอง) แต่อย่างน้อยรีเฟรชหน้าแล้วการจองไม่หาย
  * เก็บเฉพาะการจอง ไม่เก็บค่าตั้งค่า เพื่อให้แก้ค่าเริ่มต้นในโค้ดแล้วมีผลทันที
  */
-// v2: เปลี่ยนเป็นห้องจริงของวิทยาลัยและเพิ่มการอนุมัติ 3 ขั้น — ข้อมูลชุดเก่าอ้างห้องที่ไม่มีแล้วจึงไม่อ่านต่อ
-const LOCAL_STORAGE_KEY = 'mrb.local-bookings.v2';
+// v3: เปลี่ยนเป็นบัญชีชื่อผู้ใช้ + PIN — การจองชุดเก่าอ้างบัญชีอีเมลที่ไม่มีแล้วจึงไม่อ่านต่อ
+const LOCAL_STORAGE_KEY = 'mrb.local-bookings.v3';
 
-function loadState(): DemoState {
-  const state = createState();
+async function loadState(): Promise<DemoState> {
+  const state = createState(await seedUsers());
   const saved = readLocal(LOCAL_STORAGE_KEY);
   if (saved === null) return state;
   try {
-    const parsed = JSON.parse(saved) as { bookings?: unknown; announcements?: unknown; dataVersion?: unknown };
+    const parsed = JSON.parse(saved) as { users?: unknown; bookings?: unknown; announcements?: unknown; dataVersion?: unknown };
+    if (Array.isArray(parsed.users) && parsed.users.length > 0) state.users = parsed.users as DemoUser[];
     if (Array.isArray(parsed.bookings)) state.bookings = parsed.bookings as DemoBooking[];
     if (Array.isArray(parsed.announcements)) state.announcements = parsed.announcements as Announcement[];
     if (typeof parsed.dataVersion === 'number') state.dataVersion = parsed.dataVersion;
@@ -219,14 +252,14 @@ function loadState(): DemoState {
 function saveState(state: DemoState): void {
   writeLocal(
     LOCAL_STORAGE_KEY,
-    JSON.stringify({ bookings: state.bookings, announcements: state.announcements, dataVersion: state.dataVersion }),
+    JSON.stringify({ users: state.users, bookings: state.bookings, announcements: state.announcements, dataVersion: state.dataVersion }),
   );
 }
 
-function createState(): DemoState {
+function createState(users: DemoUser[]): DemoState {
   return {
     settings: { ...DEFAULT_SYSTEM_SETTINGS },
-    users: [...DEMO_ACCOUNTS],
+    users,
     rooms: seedRooms(),
     bookings: seedBookings(),
     announcements: seedAnnouncements(),
@@ -237,35 +270,140 @@ function createState(): DemoState {
 const DEMO_TOKEN_PREFIX = 'demo-token:';
 
 export function createDemoTransport(): Transport {
-  const state = loadState();
+  const ready = loadState();
+  let state!: DemoState;
+  /** PIN ผิดติดกันรายบัญชี — เหมือนตัวนับใน CacheService ของ Apps Script */
+  const pinFailures = new Map<string, { count: number; until: number }>();
 
-  function userFromToken(token: string): SessionUser {
+  // token ผูก tokenVersion ไว้ รีเซ็ต PIN แล้ว token เดิมใช้ไม่ได้ทันทีเหมือนระบบจริง
+  function userFromToken(token: string): DemoUser {
     if (!token.startsWith(DEMO_TOKEN_PREFIX)) {
       throw new ApiError('UNAUTHENTICATED', 'กรุณาเข้าสู่ระบบ');
     }
-    const email = token.slice(DEMO_TOKEN_PREFIX.length);
-    const user = state.users.find((candidate) => candidate.email === email);
-    if (user === undefined) throw new ApiError('UNAUTHENTICATED', 'กรุณาเข้าสู่ระบบ');
+    const [username, version] = token.slice(DEMO_TOKEN_PREFIX.length).split(':');
+    const user = state.users.find((candidate) => candidate.email === username);
+    if (user === undefined) throw new ApiError('FORBIDDEN', 'ไม่พบบัญชีผู้ใช้นี้ในระบบแล้ว');
+    if (user.status !== 'active') throw new ApiError('FORBIDDEN', 'บัญชีนี้ถูกปิดการใช้งาน');
+    if (String(user.tokenVersion) !== version) throw new ApiError('UNAUTHENTICATED', 'PIN ของคุณถูกเปลี่ยน กรุณาเข้าสู่ระบบอีกครั้ง');
     return user;
+  }
+
+  function requireAdmin(token: string): DemoUser {
+    const user = userFromToken(token);
+    if (user.role !== 'admin') throw new ApiError('FORBIDDEN', 'ต้องเป็นผู้ดูแลระบบจึงจะทำรายการนี้ได้');
+    return user;
+  }
+
+  function issues(parsed: { ok: false; issues: { message: string }[] }): string {
+    return parsed.issues.map((issue) => issue.message).join(' · ');
+  }
+
+  function changed(): void {
+    state.dataVersion += 1;
+    saveState(state);
   }
 
   const handlers: Record<string, (payload: never, token: string) => unknown> = {
     ping: () => ({ pong: true, serverTime: new Date().toISOString() }),
 
-    login: (payload: { role?: string; email?: string }) => {
-      const user = DEMO_ACCOUNTS.find((account) => account.email === payload?.email) ?? (payload?.role === 'staff' ? DEMO_STAFF : DEMO_ADMIN);
-      return { token: `${DEMO_TOKEN_PREFIX}${user.email}`, user };
+    login: async (payload: unknown) => {
+      const parsed = validateLoginInput(payload);
+      if (!parsed.ok) throw new ApiError('VALIDATION', 'กรุณากรอกชื่อผู้ใช้และ PIN', parsed.issues);
+      const { username, pin } = parsed.value;
+      const failure = pinFailures.get(username);
+      if (failure && failure.until > Date.now() && failure.count >= PIN_MAX_FAILURES) {
+        throw new ApiError('BUSY', `ใส่ PIN ผิดหลายครั้ง บัญชีนี้ถูกล็อกชั่วคราว ${PIN_LOCK_MINUTES} นาที หรือให้ผู้ดูแลรีเซ็ต PIN`);
+      }
+      const user = state.users.find((candidate) => candidate.email === username);
+      const ok = user !== undefined && user.pinHash !== '' &&
+        constantTimeEqual(await demoPinHash(username, user.pinSalt, pin), user.pinHash);
+      if (!ok || user === undefined) {
+        const count = failure && failure.until > Date.now() ? failure.count + 1 : 1;
+        pinFailures.set(username, { count, until: Date.now() + PIN_LOCK_MINUTES * 60_000 });
+        throw new ApiError('UNAUTHENTICATED', 'ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง');
+      }
+      if (user.status !== 'active') throw new ApiError('FORBIDDEN', 'บัญชีนี้ถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
+      pinFailures.delete(username);
+      user.lastLoginAt = new Date().toISOString();
+      saveState(state);
+      return { token: `${DEMO_TOKEN_PREFIX}${user.email}:${user.tokenVersion}`, user: sessionView(user) };
     },
 
-    me: (_payload, token) => ({ user: userFromToken(token) }),
+    users: (_payload, token) => {
+      requireAdmin(token);
+      return { users: state.users.map(adminView) };
+    },
+    createUser: async (payload: unknown, token) => {
+      requireAdmin(token);
+      const parsed = validateUserAccountInput(payload, { requirePin: true });
+      if (!parsed.ok) throw new ApiError('VALIDATION', issues(parsed), parsed.issues);
+      const input = parsed.value;
+      if (state.users.some((user) => user.email === input.username)) {
+        throw new ApiError('CONFLICT', `มีชื่อผู้ใช้ "${input.username}" อยู่แล้ว`);
+      }
+      const user: DemoUser = {
+        email: input.username, displayName: input.displayName, department: input.department, role: input.role,
+        status: input.status, allowedRoomIds: input.allowedRoomIds, tokenVersion: 1, lastLoginAt: '',
+        createdAt: new Date().toISOString(), ...(await demoCredential(input.username, input.pin)),
+      };
+      state.users.push(user); changed();
+      return { user: adminView(user) };
+    },
+    updateUser: (payload: unknown, token) => {
+      const admin = requireAdmin(token);
+      const parsed = validateUserAccountInput(payload, { requirePin: false });
+      if (!parsed.ok) throw new ApiError('VALIDATION', issues(parsed), parsed.issues);
+      const input = parsed.value;
+      const user = state.users.find((item) => item.email === input.username);
+      if (!user) throw new ApiError('NOT_FOUND', 'ไม่พบผู้ใช้');
+      if (input.username === admin.email && (input.status !== 'active' || input.role !== 'admin')) {
+        throw new ApiError('CONFLICT', 'ลดสิทธิ์หรือปิดบัญชีของตัวเองไม่ได้ ให้ผู้ดูแลคนอื่นทำแทน');
+      }
+      const problem = lastAdminProblem(state.users.map((item) => ({ ...item, username: item.email })), input.username, input);
+      if (problem !== null) throw new ApiError('CONFLICT', problem);
+      Object.assign(user, {
+        displayName: input.displayName, department: input.department, role: input.role,
+        status: input.status, allowedRoomIds: input.allowedRoomIds,
+      });
+      changed();
+      return { user: adminView(user) };
+    },
+    resetUserPin: async (payload: unknown, token) => {
+      requireAdmin(token);
+      const parsed = validateResetPinInput(payload);
+      if (!parsed.ok) throw new ApiError('VALIDATION', issues(parsed), parsed.issues);
+      const user = state.users.find((item) => item.email === parsed.value.username);
+      if (!user) throw new ApiError('NOT_FOUND', 'ไม่พบผู้ใช้');
+      Object.assign(user, await demoCredential(user.email, parsed.value.pin));
+      user.tokenVersion += 1;
+      pinFailures.delete(user.email);
+      changed();
+      return { ok: true };
+    },
+    deleteUser: (payload: { username?: string }, token) => {
+      const admin = requireAdmin(token);
+      const username = normalizeUsername(payload?.username);
+      if (username === admin.email) throw new ApiError('CONFLICT', 'ลบบัญชีของตัวเองไม่ได้');
+      if (!state.users.some((item) => item.email === username)) throw new ApiError('NOT_FOUND', 'ไม่พบผู้ใช้');
+      const problem = lastAdminProblem(state.users.map((item) => ({ ...item, username: item.email })), username, null);
+      if (problem !== null) throw new ApiError('CONFLICT', problem);
+      state.users = state.users.filter((item) => item.email !== username);
+      changed();
+      return { ok: true };
+    },
+
+    me: (_payload, token) => ({ user: sessionView(userFromToken(token)) }),
 
     bootstrap: (_payload, token) => ({
-      user: userFromToken(token),
+      user: sessionView(userFromToken(token)),
       settings: state.settings,
       dataVersion: state.dataVersion,
       serverTime: new Date().toISOString(),
     }),
-    rooms: (_payload, token) => { userFromToken(token); return { rooms: state.rooms }; },
+    rooms: (_payload, token) => {
+      const user = userFromToken(token);
+      return { rooms: state.rooms.filter((room) => canUseRoom(user, room.roomId)) };
+    },
     bookings: (payload: { from?: string; to?: string }, token) => {
       const user = userFromToken(token);
       return { bookings: state.bookings.filter((booking) =>
@@ -288,6 +426,7 @@ export function createDemoTransport(): Transport {
       if (!input.termsAccepted) throw new ApiError('VALIDATION', 'กรุณายอมรับเงื่อนไขการใช้ห้องประชุม');
       const room = state.rooms.find((item) => item.roomId === input.roomId);
       if (!room) throw new ApiError('NOT_FOUND', 'ไม่พบห้องประชุม');
+      if (!canUseRoom(user, room.roomId)) throw new ApiError('FORBIDDEN', 'บัญชีของคุณยังไม่ได้รับสิทธิ์จองห้องนี้ กรุณาติดต่อผู้ดูแลระบบ');
       const activeCount = state.bookings.filter((item) => item.userEmail === user.email && ['pending','confirmed'].includes(item.status)).length;
       const rules = validateBookingRules(input, { settings: state.settings, room, now: new Date(), isAdmin: user.role === 'admin', activeBookingCount: activeCount });
       if (!rules.ok) throw new ApiError('VALIDATION', rules.issues.map((issue) => issue.message).join(' · '));
@@ -372,6 +511,7 @@ export function createDemoTransport(): Transport {
     async call<T>(action: string, payload: unknown = {}, token = ''): Promise<T> {
       // หน่วงเล็กน้อยให้เห็นสถานะกำลังโหลดเหมือนของจริง (Apps Script ตอบ ~0.5-2 วินาที)
       await new Promise((resolve) => window.setTimeout(resolve, 220));
+      state = await ready;
 
       const handler = handlers[action];
       if (handler === undefined) {
@@ -381,6 +521,7 @@ export function createDemoTransport(): Transport {
     },
 
     async version(): Promise<VersionResult> {
+      state = await ready;
       return { dataVersion: state.dataVersion, serverTime: new Date().toISOString() };
     },
   };

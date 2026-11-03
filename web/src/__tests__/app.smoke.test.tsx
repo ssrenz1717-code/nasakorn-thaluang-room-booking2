@@ -6,6 +6,7 @@ import { App } from '../app/App';
 import { AppProvider } from '../app/providers/AppProvider';
 import { ToastProvider } from '../components/ui/Toast';
 import { dayOfWeekOfDateKey, toDateKey } from '@shared/time/bangkok';
+import { DEMO_LOGINS } from '../lib/api/demo';
 
 /**
  * เทสว่าหน้าเว็บ "รันได้จริง" ไม่ใช่แค่ build ผ่าน
@@ -29,12 +30,32 @@ function renderApp() {
   );
 }
 
-/** รอจนเข้าระบบและเห็นเมนูหลักแล้ว (โหมดสาธิตเข้าระบบให้อัตโนมัติ) */
-async function openApp() {
+const PINS: Record<string, string> = Object.fromEntries(DEMO_LOGINS.map((login) => [login.username, login.pin]));
+
+/** กรอกหน้าเข้าสู่ระบบ (ต้องอยู่ที่หน้านั้นแล้ว) แล้วรอจนเห็นเมนูหลัก */
+async function signInAs(username: string, pin = PINS[username] ?? '') {
+  const field = await screen.findByLabelText('ชื่อผู้ใช้', {}, { timeout: 5000 });
+  fireEvent.change(field, { target: { value: username } });
+  fireEvent.change(screen.getByLabelText(/^PIN/), { target: { value: pin } });
+  fireEvent.click(screen.getByRole('button', { name: 'เข้าสู่ระบบ' }));
+  return screen.findByRole('navigation', { name: 'เมนูหลัก' }, { timeout: 5000 });
+}
+
+/** เปิดเว็บแล้วเข้าระบบ (ค่าเริ่มต้น: ผู้ดูแล shoyu) — ถ้ายังมี session ค้างจะเข้าหน้าหลักเลย */
+async function openApp(username = 'shoyu') {
   const user = userEvent.setup();
   renderApp();
-  const nav = await screen.findByRole('navigation', { name: 'เมนูหลัก' }, { timeout: 5000 });
+  await waitFor(() => {
+    expect(screen.queryByLabelText('ชื่อผู้ใช้') ?? screen.queryByRole('navigation', { name: 'เมนูหลัก' })).not.toBeNull();
+  }, { timeout: 5000 });
+  const nav = screen.queryByRole('navigation', { name: 'เมนูหลัก' }) ?? await signInAs(username);
   return { user, nav };
+}
+
+async function signOutVia(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { expanded: false, name: /ผู้ดูแลระบบ|ผู้ใช้งาน|ผู้รับรอง|ผู้อนุมัติ|เจ้าหน้าที่ตรวจห้อง/ }));
+  await user.click(screen.getByRole('menuitem', { name: /ออกจากระบบ/ }));
+  await screen.findByRole('heading', { level: 1, name: 'เข้าสู่ระบบ' });
 }
 
 async function goTo(user: ReturnType<typeof userEvent.setup>, nav: HTMLElement, label: string) {
@@ -50,8 +71,10 @@ afterEach(() => {
 });
 
 describe('เปิดเว็บโดยยังไม่ได้ตั้งค่าเซิร์ฟเวอร์', () => {
-  it('ไม่จอขาว และเข้าระบบให้เลยโดยไม่ต้องกดอะไร', async () => {
-    await openApp();
+  it('เปิดมาเจอหน้าเข้าสู่ระบบ ใส่ชื่อผู้ใช้กับ PIN แล้วเข้าได้', async () => {
+    renderApp();
+    expect(await screen.findByRole('heading', { level: 1, name: 'เข้าสู่ระบบ' }, { timeout: 5000 })).toBeDefined();
+    await signInAs('shoyu');
 
     const heading = screen.getByRole('heading', { level: 1 });
     expect(heading.textContent).toBe('ระบบจองห้องประชุมออนไลน์');
@@ -110,9 +133,11 @@ describe('เมนูและการเข้าถึงหน้าต่�
     const { nav } = await openApp();
 
     expect(within(nav).queryByText('เร็ว ๆ นี้')).toBeNull();
-    for (const label of ['การแจ้งเตือน', 'จัดการผู้ใช้', 'ตั้งค่าระบบ']) {
+    for (const label of ['การแจ้งเตือน', 'ตั้งค่าระบบ']) {
       expect(within(nav).queryByText(label)).toBeNull();
     }
+    // จัดการผู้ใช้ทำเสร็จแล้ว ผู้ดูแลต้องเห็นเมนูนี้
+    expect(within(nav).getAllByText('จัดการผู้ใช้').length).toBeGreaterThan(0);
     // ช่องค้นหาและกระดิ่งเคยเป็นปุ่มที่กดไม่ได้ ต้องไม่กลับมาอีก
     expect(screen.queryByRole('searchbox')).toBeNull();
     expect(screen.queryByRole('button', { name: /การแจ้งเตือน/ })).toBeNull();
@@ -151,28 +176,80 @@ describe('เมนูและการเข้าถึงหน้าต่�
 describe('สิทธิ์ผู้ใช้', () => {
   it('ออกจากระบบแล้วกลับไปหน้าเข้าสู่ระบบ', async () => {
     const { user } = await openApp();
+    await signOutVia(user);
+    expect(screen.getByLabelText('ชื่อผู้ใช้')).toBeDefined();
+  });
 
-    await user.click(screen.getByRole('button', { expanded: false, name: /ผู้ดูแลระบบ/ }));
-    await user.click(screen.getByRole('menuitem', { name: /ออกจากระบบ/ }));
+  it('PIN ผิดเข้าไม่ได้ และบอกข้อความเดียวกับชื่อผู้ใช้ผิด', async () => {
+    renderApp();
+    const field = await screen.findByLabelText('ชื่อผู้ใช้', {}, { timeout: 5000 });
+    fireEvent.change(field, { target: { value: 'shoyu' } });
+    fireEvent.change(screen.getByLabelText(/^PIN/), { target: { value: '999999' } });
+    fireEvent.click(screen.getByRole('button', { name: 'เข้าสู่ระบบ' }));
+    expect(await screen.findByText('ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง', {}, { timeout: 3000 })).toBeDefined();
 
-    expect(await screen.findByRole('button', { name: /เข้าสู่ระบบในฐานะเจ้าหน้าที่/ })).toBeDefined();
-    // ชื่อระบบเคยถูกพิมพ์ซ้ำสองบรรทัดในหน้านี้
-    expect(screen.getAllByText('ระบบจองห้องประชุม')).toHaveLength(1);
+    fireEvent.change(field, { target: { value: 'nobody' } });
+    fireEvent.change(screen.getByLabelText(/^PIN/), { target: { value: '999999' } });
+    fireEvent.click(screen.getByRole('button', { name: 'เข้าสู่ระบบ' }));
+    await waitFor(() => expect(screen.getByText('ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง')).toBeDefined(), { timeout: 3000 });
+    expect(screen.queryByRole('navigation', { name: 'เมนูหลัก' })).toBeNull();
   });
 
   it('พนักงานไม่เห็นเมนูของผู้ดูแลระบบ', async () => {
-    const { user } = await openApp();
-
-    await user.click(screen.getByRole('button', { expanded: false, name: /ผู้ดูแลระบบ/ }));
-    await user.click(screen.getByRole('menuitem', { name: /ออกจากระบบ/ }));
-    await user.click(await screen.findByRole('button', { name: /เข้าสู่ระบบในฐานะเจ้าหน้าที่/ }));
-
-    const nav = await screen.findByRole('navigation', { name: 'เมนูหลัก' }, { timeout: 5000 });
+    const { nav } = await openApp('teacher');
     expect(within(nav).queryByText('จัดการผู้ใช้')).toBeNull();
     expect(within(nav).queryByText('ตั้งค่าระบบ')).toBeNull();
     expect(within(nav).queryByText('รออนุมัติ')).toBeNull();
     expect(within(nav).getByText('จองห้องประชุม')).toBeDefined();
   });
+
+  it('ผู้ดูแลเพิ่มผู้ใช้ที่จองได้ห้องเดียว แล้วคนนั้นเข้าระบบด้วย PIN ที่ได้และเห็นแค่ห้องนั้น', async () => {
+    const { user, nav } = await openApp();
+    await goTo(user, nav, 'จัดการผู้ใช้');
+    // ผู้ลงนามครบทั้ง 3 ขั้นตั้งแต่ติดตั้ง
+    expect((await screen.findAllByText('นายวัชรพงศ์ โสภา', { selector: 'p' }, { timeout: 3000 })).length).toBe(2);
+
+    await user.click(screen.getByRole('button', { name: 'เพิ่มผู้ใช้' }));
+    const dialog = await screen.findByRole('dialog', { name: 'เพิ่มผู้ใช้' });
+    fireEvent.change(within(dialog).getByLabelText('ชื่อ-นามสกุล'), { target: { value: 'นางสาวทดสอบ ระบบ' } });
+    fireEvent.change(within(dialog).getByLabelText(/ชื่อผู้ใช้/), { target: { value: 'tester' } });
+    fireEvent.change(within(dialog).getByLabelText(/PIN แรกเข้า/), { target: { value: '582039' } });
+    await user.click(within(dialog).getByRole('radio', { name: 'เลือกเฉพาะบางห้อง' }));
+    await user.click(within(dialog).getByRole('checkbox', { name: 'ห้องประชุมสักทอง' }));
+    await user.click(within(dialog).getByRole('button', { name: 'เพิ่มผู้ใช้' }));
+
+    // PIN ที่ออกให้ค้างอยู่บนหน้าจนกดรับทราบ
+    const notice = await screen.findByText('PIN ของ นางสาวทดสอบ ระบบ', {}, { timeout: 3000 });
+    expect(notice).toBeDefined();
+    expect(screen.getByText('582039')).toBeDefined();
+
+    await signOutVia(user);
+    const testerNav = await signInAs('tester', '582039');
+    await goTo(user, testerNav, 'จองห้องประชุม');
+    await waitFor(() => expect(screen.getAllByText('ห้องประชุมสักทอง').length).toBeGreaterThan(0), { timeout: 3000 });
+    expect(screen.queryByText('หอประชุมอดิเรกสาร')).toBeNull();
+  }, 30_000);
+
+  it('ผู้ดูแลลบตัวเองไม่ได้ แต่รีเซ็ต PIN คนอื่นแล้ว PIN เดิมใช้ไม่ได้', async () => {
+    const { user, nav } = await openApp();
+    await goTo(user, nav, 'จัดการผู้ใช้');
+    await screen.findByText('ครูทดลอง ใจดี', { selector: 'p' }, { timeout: 3000 });
+    expect(screen.queryByRole('button', { name: 'ลบ shoyu' })).toBeNull();
+
+    const row = screen.getByText('ครูทดลอง ใจดี', { selector: 'p' }).closest('li')!;
+    await user.click(within(row).getByRole('button', { name: /รีเซ็ต PIN/ }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText(/PIN ใหม่/), { target: { value: '730264' } });
+    await user.click(within(dialog).getByRole('button', { name: 'ตั้ง PIN ใหม่' }));
+    await screen.findByText('PIN ของ ครูทดลอง ใจดี', {}, { timeout: 3000 });
+
+    await signOutVia(user);
+    fireEvent.change(screen.getByLabelText('ชื่อผู้ใช้'), { target: { value: 'teacher' } });
+    fireEvent.change(screen.getByLabelText(/^PIN/), { target: { value: PINS.teacher } });
+    fireEvent.click(screen.getByRole('button', { name: 'เข้าสู่ระบบ' }));
+    expect(await screen.findByText('ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง', {}, { timeout: 3000 })).toBeDefined();
+    await signInAs('teacher', '730264');
+  }, 30_000);
 });
 
 describe('จองห้องจริงตั้งแต่ต้นจนจบ', () => {
@@ -259,31 +336,31 @@ describe('เมนูซ้าย: ย่อได้ และมีป้า�
   });
 
   it('อนุมัติ 3 ขั้นคนละบัญชี: ตรวจห้องแล้วเด้งไปผู้รับรอง แล้วไปผู้อนุมัติ', async () => {
-    const { user, nav } = await openApp();
-    const switchTo = async (name: string) => {
-      await user.click(screen.getByRole('button', { expanded: false, name: /ผู้ดูแลระบบ|นาย/ }));
-      await user.click(screen.getByRole('menuitemradio', { name: new RegExp(name) }));
-      await waitFor(() => expect(screen.getByRole('button', { expanded: false, name: new RegExp(name) })).toBeDefined(), { timeout: 3000 });
+    const { user, nav: adminNav } = await openApp();
+    let nav = adminNav;
+    const switchTo = async (username: string) => {
+      await signOutVia(user);
+      nav = await signInAs(username);
     };
 
     // ผู้ดูแลเห็นคำขอที่ค้างทุกขั้น (ตั้งต้น 2 รายการ: รอขั้น 1 และรอขั้น 2) แต่ลงนามแทนไม่ได้
     await within(nav).findByRole('link', { name: /^อนุมัติการใช้ห้อง.*มี 2 รายการ/ }, { timeout: 3000 });
 
     // ขั้น 1: เจ้าหน้าที่ตรวจห้องเห็นเฉพาะของตัวเอง 1 รายการ
-    await switchTo('นายวัชรพงศ์ โสภา');
+    await switchTo('watcharapong');
     await user.click(await within(nav).findByRole('link', { name: /^อนุมัติการใช้ห้อง.*มี 1 รายการ/ }, { timeout: 3000 }));
     await user.click(await screen.findByRole('button', { name: 'ห้องพร้อม ส่งต่อผู้รับรอง' }, { timeout: 3000 }));
     await waitFor(() => expect(within(nav).getByRole('link', { name: 'อนุมัติการใช้ห้อง' })).toBeDefined(), { timeout: 3000 });
 
     // ขั้น 2: ผู้รับรองตอนนี้มี 2 รายการ (รายการที่เพิ่งผ่านขั้น 1 + รายการที่รออยู่แล้ว)
-    await switchTo('นายเอกราช เขียวทอง');
+    await switchTo('ekkarat');
     await within(nav).findByRole('link', { name: /^อนุมัติการใช้ห้อง.*มี 2 รายการ/ }, { timeout: 3000 });
     const endorse = await screen.findAllByRole('button', { name: 'รับรอง ส่งต่อผู้อนุมัติ' }, { timeout: 3000 });
     await user.click(endorse[0]!);
     await within(nav).findByRole('link', { name: /^อนุมัติการใช้ห้อง.*มี 1 รายการ/ }, { timeout: 3000 });
 
     // ขั้น 3: ผู้อนุมัติกดแล้วรายการนั้นยืนยันแล้ว
-    await switchTo('นายชาตรี เริงชัยภูมิ');
+    await switchTo('chatree');
     await user.click(await screen.findByRole('button', { name: 'อนุมัติการใช้ห้อง' }, { timeout: 3000 }));
     await waitFor(() => expect(within(nav).getByRole('link', { name: 'อนุมัติการใช้ห้อง' })).toBeDefined(), { timeout: 3000 });
   }, 30_000);
@@ -448,6 +525,8 @@ describe('แบบคำขอใช้ห้อง (กรอกผ่าน�
   it('หน้าแบบฟอร์มเติมข้อมูลจากคำขอ ติ๊กห้องและอุปกรณ์ และใส่ชื่อผู้ลงนามที่ลงนามแล้ว', async () => {
     window.location.hash = '#/reports?booking=demo-bk-1';
     renderApp();
+    // เปิดลิงก์ตรงก่อนเข้าระบบ: เข้าระบบแล้วต้องกลับมาหน้าเดิม ไม่เด้งไปหน้าแรก
+    await signInAs('shoyu');
     const sheet = await screen.findByRole('article', { name: 'แบบคำขออนุญาตใช้ห้องประชุม' }, { timeout: 5000 });
     const text = sheet.textContent ?? '';
     for (const expected of ['อ.สมชาย ใจดี', 'แผนกวิชาเทคโนโลยีสารสนเทศ', '081-234-5678', 'ประชุมครูและบุคลากรประจำเดือน', '09.00', '10.30', 'นายเอกราช เขียวทอง', 'รองผู้อำนวยการฝ่ายพัฒนายุทธศาสตร์และแผนงาน']) {
@@ -462,6 +541,7 @@ describe('แบบคำขอใช้ห้อง (กรอกผ่าน�
   it('ยังไม่มีใครกดอนุมัติ ห้ามมีชื่อผู้อนุมัติในแบบฟอร์ม', async () => {
     window.location.hash = '#/reports?booking=demo-bk-5';
     renderApp();
+    await signInAs('shoyu');
     const sheet = await screen.findByRole('article', { name: 'แบบคำขออนุญาตใช้ห้องประชุม' }, { timeout: 5000 });
     const text = sheet.textContent ?? '';
     expect(text).toContain('ประชุมเตรียมงานวันวิชาการ');

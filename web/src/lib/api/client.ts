@@ -2,7 +2,8 @@
 
 import { createDemoTransport } from './demo';
 import { createHttpTransport } from './transport';
-import type { BootstrapResult, LoginResult, SessionUser, Transport, VersionResult } from './types';
+import type { AdminUser, BootstrapResult, LoginResult, SessionUser, Transport, VersionResult } from './types';
+import type { UserAccountInput } from '@shared/schemas/user';
 import type { DemoBooking, DemoRoom } from './demo';
 import type { BookingRequest } from '@shared/schemas/booking';
 import type { BusySlot } from '@shared/domain/availability';
@@ -25,9 +26,8 @@ function announceBookingsChanged<T>(result: Promise<T>): Promise<T> {
 export interface ApiClient {
   readonly mode: 'http' | 'demo';
   ping(): Promise<{ pong: boolean; serverTime: string }>;
-  loginWithGoogle(idToken: string): Promise<LoginResult>;
-  /** โหมดข้อมูลในเบราว์เซอร์: เข้าระบบตาม role หรือเลือกบัญชีตัวอย่างด้วยอีเมล */
-  loginDemo(role: 'admin' | 'staff', email?: string): Promise<LoginResult>;
+  /** เข้าสู่ระบบด้วยชื่อผู้ใช้ + PIN (ทั้งระบบจริงและโหมดข้อมูลในเบราว์เซอร์) */
+  login(username: string, pin: string): Promise<LoginResult>;
   me(token: string): Promise<{ user: SessionUser }>;
   bootstrap(token: string): Promise<BootstrapResult>;
   version(): Promise<VersionResult>;
@@ -43,14 +43,19 @@ export interface ApiClient {
   /** เพิ่ม (announcementId = '') หรือแก้ประกาศ — เฉพาะผู้ดูแล */
   saveAnnouncement(token: string, input: AnnouncementInput): Promise<{ announcement: Announcement }>;
   archiveAnnouncement(token: string, announcementId: string): Promise<{ ok: boolean }>;
+  /** จัดการผู้ใช้ — เฉพาะผู้ดูแล */
+  users(token: string): Promise<{ users: AdminUser[] }>;
+  createUser(token: string, input: UserAccountInput & { pin: string }): Promise<{ user: AdminUser }>;
+  updateUser(token: string, input: UserAccountInput): Promise<{ user: AdminUser }>;
+  resetUserPin(token: string, username: string, pin: string): Promise<{ ok: boolean }>;
+  deleteUser(token: string, username: string): Promise<{ ok: boolean }>;
 }
 
 function wrap(transport: Transport): ApiClient {
   return {
     mode: transport.kind,
     ping: () => transport.call('ping'),
-    loginWithGoogle: (idToken) => transport.call('login', { idToken }),
-    loginDemo: (role, email) => transport.call('login', { role, email }),
+    login: (username, pin) => transport.call('login', { username, pin }),
     me: (token) => transport.call('me', {}, token),
     bootstrap: (token) => transport.call('bootstrap', {}, token),
     version: () => transport.version(),
@@ -63,6 +68,11 @@ function wrap(transport: Transport): ApiClient {
     announcements: (token) => transport.call('announcements', {}, token),
     saveAnnouncement: (token, input) => transport.call('saveAnnouncement', input, token),
     archiveAnnouncement: (token, announcementId) => transport.call('archiveAnnouncement', { announcementId }, token),
+    users: (token) => transport.call('users', {}, token),
+    createUser: (token, input) => transport.call('createUser', input, token),
+    updateUser: (token, input) => transport.call('updateUser', input, token),
+    resetUserPin: (token, username, pin) => transport.call('resetUserPin', { username, pin }, token),
+    deleteUser: (token, username) => transport.call('deleteUser', { username }, token),
   };
 }
 

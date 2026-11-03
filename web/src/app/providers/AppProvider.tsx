@@ -14,8 +14,6 @@ import { ApiError, type SessionUser } from '../../lib/api/types';
 import { readLocal, removeLocal, writeLocal } from '../../lib/storage';
 
 const TOKEN_KEY = 'mrb.session.token';
-/** บัญชีตัวอย่างที่เลือกไว้ในโหมดข้อมูลในเบราว์เซอร์ — รีเฟรชแล้วยังเป็นคนเดิม */
-const DEMO_ACCOUNT_KEY = 'mrb.demo.account';
 
 type Phase = 'booting' | 'anonymous' | 'ready';
 
@@ -31,10 +29,7 @@ interface AppState {
   serverTime: Date | null;
   dataVersion: number;
   bootError: string | null;
-  signInWithGoogle(idToken: string): Promise<void>;
-  signInDemo(role: 'admin' | 'staff'): Promise<void>;
-  /** โหมดข้อมูลในเบราว์เซอร์: สลับไปเป็นบัญชีตัวอย่างอื่น (ใช้ลองอนุมัติ 3 ขั้นทีละคน) */
-  switchDemoAccount(email: string): Promise<void>;
+  signIn(username: string, pin: string): Promise<void>;
   signOut(): void;
   retryBoot(): void;
 }
@@ -82,27 +77,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  // ยังไม่ได้ต่อเซิร์ฟเวอร์: เข้าระบบในฐานะผู้ดูแลให้ทันที ข้อมูลเก็บในเบราว์เซอร์ของผู้ใช้เอง
+  // ทั้งระบบจริงและโหมดข้อมูลในเบราว์เซอร์ใช้ session ที่เก็บไว้ ไม่มีก็ไปหน้าเข้าสู่ระบบ
   useEffect(() => {
-    if (isDemo) {
-      let cancelled = false;
-      setPhase('booting');
-      api
-        .loginDemo('admin', readLocal(DEMO_ACCOUNT_KEY) ?? undefined)
-        .then((login) => api.bootstrap(login.token).then((result) => ({ login, result })))
-        .then(({ login, result }) => {
-          if (cancelled) return;
-          setToken(login.token);
-          applyBootstrap(result);
-        })
-        .catch((error: unknown) => {
-          if (cancelled) return;
-          setBootError(error instanceof Error ? error.message : 'เปิดระบบไม่สำเร็จ');
-          setPhase('anonymous');
-        });
-      return () => { cancelled = true; };
-    }
-
     const token = readLocal(TOKEN_KEY);
     if (token === null) {
       setToken('');
@@ -136,33 +112,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [api, isDemo, applyBootstrap, bootAttempt]);
 
-  const signInWithGoogle = useCallback(
-    async (idToken: string) => {
-      const result = await api.loginWithGoogle(idToken);
-      writeLocal(TOKEN_KEY, result.token);
-      setToken(result.token);
-      const boot = await api.bootstrap(result.token);
-      applyBootstrap(boot);
-    },
-    [api, applyBootstrap],
-  );
-
-  const signInDemo = useCallback(
-    async (role: 'admin' | 'staff') => {
-      const result = await api.loginDemo(role);
+  const signIn = useCallback(
+    async (username: string, pin: string) => {
+      const result = await api.login(username, pin);
       const boot = await api.bootstrap(result.token);
       writeLocal(TOKEN_KEY, result.token);
-      setToken(result.token);
-      applyBootstrap(boot);
-    },
-    [api, applyBootstrap],
-  );
-
-  const switchDemoAccount = useCallback(
-    async (email: string) => {
-      const result = await api.loginDemo('admin', email);
-      const boot = await api.bootstrap(result.token);
-      writeLocal(DEMO_ACCOUNT_KEY, email);
       setToken(result.token);
       applyBootstrap(boot);
     },
@@ -172,7 +126,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(() => {
     removeLocal(TOKEN_KEY);
     setToken('');
-    window.google?.accounts?.id?.disableAutoSelect();
     setUser(null);
     setSettings(null);
     setPhase('anonymous');
@@ -195,9 +148,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       serverTime,
       dataVersion,
       bootError,
-      signInWithGoogle,
-      signInDemo,
-      switchDemoAccount,
+      signIn,
       signOut,
       retryBoot,
     }),
@@ -212,9 +163,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       serverTime,
       dataVersion,
       bootError,
-      signInWithGoogle,
-      signInDemo,
-      switchDemoAccount,
+      signIn,
       signOut,
       retryBoot,
     ],

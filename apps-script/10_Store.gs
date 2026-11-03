@@ -162,6 +162,20 @@ function updateByKey_(name, keyValue, patch) {
   return true;
 }
 
+/** ลบแถวที่ระบุด้วยค่าในคอลัมน์คีย์ — คืน false ถ้าไม่พบ (ใช้กับชีตเล็กอย่าง Users เท่านั้น) */
+function deleteByKey_(name, keyValue) {
+  const spec = Domain.sheetSpec(name);
+  const context = readHeader_(name);
+  const keyIndex = context.headerMap[spec.keyColumn];
+  const lastRow = context.sheet.getLastRow();
+  if (lastRow < 2) return false;
+  const keyColumn = context.sheet.getRange(2, keyIndex + 1, lastRow - 1, 1).getValues();
+  const rowNumber = Domain.findRowNumber(keyColumn, 0, String(keyValue));
+  if (rowNumber === -1) return false;
+  context.sheet.deleteRow(rowNumber);
+  return true;
+}
+
 function findByKey_(name, keyValue) {
   const spec = Domain.sheetSpec(name);
   const all = readAll_(name);

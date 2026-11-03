@@ -50,13 +50,19 @@ export const BOOKING_HOT_COLUMNS = 6;
 export const SHEET_SPECS: SheetSpec[] = [
   {
     name: SHEET_USERS,
-    keyColumn: 'email',
+    // ชื่อผู้ใช้คือรหัสบัญชี (คอลัมน์ userEmail ของ Bookings ก็เก็บค่านี้)
+    keyColumn: 'username',
     headers: [
-      'email',
+      'username',
       'displayName',
       'department',
       'role',
       'status',
+      // รหัสห้องคั่นด้วยจุลภาค — ว่าง = จองได้ทุกห้อง
+      'allowedRoomIds',
+      // ไม่เก็บ PIN จริง: HMAC-SHA256(PIN_PEPPER, username|salt|pin) เป็น base64
+      'pinHash',
+      'pinSalt',
       'tokenVersion',
       'lastLoginAt',
       'createdAt',

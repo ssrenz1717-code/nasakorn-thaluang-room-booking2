@@ -5,11 +5,21 @@ import type { UserRole, UserStatus } from '@shared/schemas/user';
 import type { FieldIssue } from '@shared/validate/check';
 
 export interface SessionUser {
+  /** รหัสบัญชี = ชื่อผู้ใช้ที่ใช้เข้าสู่ระบบ (ชื่อฟิลด์คงไว้เพราะการจองและประวัติการลงนามอ้างฟิลด์นี้) */
   email: string;
   displayName: string;
   department: string;
   role: UserRole;
   status: UserStatus;
+  /** ห้องที่จองได้ — ว่าง = ทุกห้อง */
+  allowedRoomIds: string[];
+}
+
+/** ข้อมูลบัญชีที่ผู้ดูแลเห็นในหน้าจัดการผู้ใช้ (ไม่มี PIN หรือ hash ติดมา) */
+export interface AdminUser extends SessionUser {
+  hasPin: boolean;
+  lastLoginAt: string;
+  createdAt: string;
 }
 
 export interface LoginResult {

@@ -30,6 +30,7 @@ var Domain = (() => {
     BOOKING_HOT_COLUMNS: () => BOOKING_HOT_COLUMNS,
     BOOKING_STATUSES: () => BOOKING_STATUSES,
     BOOKING_STATUS_LABEL_TH: () => BOOKING_STATUS_LABEL_TH,
+    COLLEGE_ACCOUNTS: () => COLLEGE_ACCOUNTS,
     COLLEGE_ROOMS: () => COLLEGE_ROOMS,
     Check: () => Check,
     DATE_KEY_PATTERN: () => DATE_KEY_PATTERN,
@@ -37,6 +38,9 @@ var Domain = (() => {
     LOCK_HOLDING_STATUSES: () => LOCK_HOLDING_STATUSES,
     MINUTES_PER_DAY: () => MINUTES_PER_DAY,
     OPEN_LOCATION_ROOM_CODE: () => OPEN_LOCATION_ROOM_CODE,
+    PIN_LENGTH: () => PIN_LENGTH,
+    PIN_LOCK_MINUTES: () => PIN_LOCK_MINUTES,
+    PIN_MAX_FAILURES: () => PIN_MAX_FAILURES,
     REQUEST_FACILITIES: () => REQUEST_FACILITIES,
     REQUEST_FACILITY_LABEL_TH: () => REQUEST_FACILITY_LABEL_TH,
     ROOM_EQUIPMENT: () => ROOM_EQUIPMENT,
@@ -54,6 +58,7 @@ var Domain = (() => {
     SHEET_SPECS: () => SHEET_SPECS,
     SHEET_USERS: () => SHEET_USERS,
     USAGE_STATUSES: () => USAGE_STATUSES,
+    USERNAME_PATTERN: () => USERNAME_PATTERN,
     USER_ROLES: () => USER_ROLES,
     USER_ROLE_LABEL_TH: () => USER_ROLE_LABEL_TH,
     USER_STATUSES: () => USER_STATUSES,
@@ -70,8 +75,10 @@ var Domain = (() => {
     canCancelBooking: () => canCancelBooking,
     canSeeAllBookings: () => canSeeAllBookings,
     canTransition: () => canTransition,
+    canUseRoom: () => canUseRoom,
     computeUtilization: () => computeUtilization,
     conflictingSlots: () => conflictingSlots,
+    constantTimeEqual: () => constantTimeEqual,
     constantTimeEquals: () => constantTimeEquals,
     countDaysInclusive: () => countDaysInclusive,
     countsAsUsage: () => countsAsUsage,
@@ -94,14 +101,18 @@ var Domain = (() => {
     isOpenLocationRoom: () => isOpenLocationRoom,
     isStartBlocked: () => isStartBlocked,
     keyValueToObject: () => keyValueToObject,
+    lastAdminProblem: () => lastAdminProblem,
     mergeIntervals: () => mergeIntervals,
     missingColumns: () => missingColumns,
     normalizeDateKey: () => normalizeDateKey,
     normalizeUserRole: () => normalizeUserRole,
+    normalizeUsername: () => normalizeUsername,
     objectToRow: () => objectToRow,
     overlaps: () => overlaps,
     parseApprovalLog: () => parseApprovalLog,
     parseTimeOfDay: () => parseTimeOfDay,
+    pinDigestMessage: () => pinDigestMessage,
+    pinProblem: () => pinProblem,
     readBoolean: () => readBoolean,
     readList: () => readList,
     readNumber: () => readNumber,
@@ -126,10 +137,11 @@ var Domain = (() => {
     validateBookingRules: () => validateBookingRules,
     validateCancelBookingInput: () => validateCancelBookingInput,
     validateDecideBookingInput: () => validateDecideBookingInput,
+    validateLoginInput: () => validateLoginInput,
+    validateResetPinInput: () => validateResetPinInput,
     validateRoomInput: () => validateRoomInput,
-    validateSetUserRoleInput: () => validateSetUserRoleInput,
-    validateSetUserStatusInput: () => validateSetUserStatusInput,
     validateSystemSettings: () => validateSystemSettings,
+    validateUserAccountInput: () => validateUserAccountInput,
     validateUserProfileInput: () => validateUserProfileInput,
     verifySessionToken: () => verifySessionToken,
     writeList: () => writeList
@@ -466,13 +478,19 @@ var Domain = (() => {
   var SHEET_SPECS = [
     {
       name: SHEET_USERS,
-      keyColumn: "email",
+      // ชื่อผู้ใช้คือรหัสบัญชี (คอลัมน์ userEmail ของ Bookings ก็เก็บค่านี้)
+      keyColumn: "username",
       headers: [
-        "email",
+        "username",
         "displayName",
         "department",
         "role",
         "status",
+        // รหัสห้องคั่นด้วยจุลภาค — ว่าง = จองได้ทุกห้อง
+        "allowedRoomIds",
+        // ไม่เก็บ PIN จริง: HMAC-SHA256(PIN_PEPPER, username|salt|pin) เป็น base64
+        "pinHash",
+        "pinSalt",
         "tokenVersion",
         "lastLoginAt",
         "createdAt",
@@ -696,32 +714,100 @@ var Domain = (() => {
       })
     });
   }
-  function validateSetUserRoleInput(raw) {
+  var USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
+  function normalizeUsername(raw) {
+    return String(raw != null ? raw : "").trim().toLowerCase();
+  }
+  var PIN_LENGTH = 6;
+  function pinProblem(pin) {
+    if (typeof pin !== "string" || !new RegExp(`^\\d{${PIN_LENGTH}}$`).test(pin)) {
+      return `PIN \u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02 ${PIN_LENGTH} \u0E2B\u0E25\u0E31\u0E01`;
+    }
+    if (/^(\d)\1+$/.test(pin)) return "PIN \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E1B\u0E47\u0E19\u0E40\u0E25\u0E02\u0E40\u0E14\u0E35\u0E22\u0E27\u0E01\u0E31\u0E19\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14";
+    const steps = /* @__PURE__ */ new Set();
+    for (let i = 1; i < pin.length; i += 1) steps.add(Number(pin[i]) - Number(pin[i - 1]));
+    if (steps.size === 1 && (steps.has(1) || steps.has(-1))) return "PIN \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E1B\u0E47\u0E19\u0E40\u0E25\u0E02\u0E40\u0E23\u0E35\u0E22\u0E07\u0E01\u0E31\u0E19";
+    return null;
+  }
+  function pinDigestMessage(username, salt, pin) {
+    return `pin|${normalizeUsername(username)}|${salt}|${pin}`;
+  }
+  function constantTimeEqual(a, b) {
+    let diff = a.length ^ b.length;
+    const length = Math.max(a.length, b.length);
+    for (let i = 0; i < length; i += 1) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+    return diff === 0;
+  }
+  var PIN_MAX_FAILURES = 5;
+  var PIN_LOCK_MINUTES = 15;
+  function canUseRoom(user, roomId) {
+    var _a;
+    if (user.role === "admin") return true;
+    const allowed = (_a = user.allowedRoomIds) != null ? _a : [];
+    return allowed.length === 0 || allowed.includes(roomId);
+  }
+  function validateLoginInput(raw) {
     const input = asRecord(raw);
     const check = new Check();
-    return check.result({
-      email: check.string("email", input.email, {
-        label: "\u0E2D\u0E35\u0E40\u0E21\u0E25",
-        max: 200,
-        pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-        patternMessage: "\u0E2D\u0E35\u0E40\u0E21\u0E25\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07"
-      }),
-      role: check.oneOf("role", input.role, USER_ROLES, { label: "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E01\u0E32\u0E23\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19" })
-    });
+    const username = normalizeUsername(input.username);
+    if (username === "") check.fail("username", "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49");
+    const pin = typeof input.pin === "string" ? input.pin.trim() : "";
+    if (pin === "") check.fail("pin", "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01 PIN");
+    return check.result({ username, pin });
   }
-  function validateSetUserStatusInput(raw) {
+  function roomIdList(check, raw) {
+    if (raw === void 0 || raw === null) return [];
+    if (!Array.isArray(raw) || raw.some((item) => typeof item !== "string" || item.trim() === "" || item.includes(",") || item.length > 60)) {
+      check.fail("allowedRoomIds", "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2B\u0E49\u0E2D\u0E07\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07");
+      return [];
+    }
+    return [...new Set(raw.map((item) => item.trim()))];
+  }
+  function validateUserAccountInput(raw, options) {
     const input = asRecord(raw);
     const check = new Check();
+    const username = normalizeUsername(input.username);
+    if (!USERNAME_PATTERN.test(username)) {
+      check.fail("username", "\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19 a-z, 0-9, \u0E08\u0E38\u0E14, \u0E02\u0E35\u0E14 \u0E22\u0E32\u0E27 3\u201332 \u0E15\u0E31\u0E27");
+    }
+    const pin = typeof input.pin === "string" ? input.pin.trim() : "";
+    if (options.requirePin) {
+      const problem = pinProblem(pin);
+      if (problem !== null) check.fail("pin", problem);
+    }
     return check.result({
-      email: check.string("email", input.email, {
-        label: "\u0E2D\u0E35\u0E40\u0E21\u0E25",
-        max: 200,
-        pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-        patternMessage: "\u0E2D\u0E35\u0E40\u0E21\u0E25\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07"
-      }),
-      status: check.oneOf("status", input.status, USER_STATUSES, { label: "\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49" })
+      username,
+      displayName: check.string("displayName", input.displayName, { label: "\u0E0A\u0E37\u0E48\u0E2D-\u0E19\u0E32\u0E21\u0E2A\u0E01\u0E38\u0E25", min: 1, max: 100 }),
+      department: check.string("department", input.department, { label: "\u0E2B\u0E19\u0E48\u0E27\u0E22\u0E07\u0E32\u0E19", max: 100, fallback: "" }),
+      role: check.oneOf("role", input.role, USER_ROLES, { label: "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E01\u0E32\u0E23\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19" }),
+      status: check.oneOf("status", input.status, USER_STATUSES, { label: "\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49", fallback: "active" }),
+      allowedRoomIds: roomIdList(check, input.allowedRoomIds),
+      pin
     });
   }
+  function validateResetPinInput(raw) {
+    const input = asRecord(raw);
+    const check = new Check();
+    const username = normalizeUsername(input.username);
+    if (username === "") check.fail("username", "\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E23\u0E30\u0E1A\u0E38\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49");
+    const pin = typeof input.pin === "string" ? input.pin.trim() : "";
+    const problem = pinProblem(pin);
+    if (problem !== null) check.fail("pin", problem);
+    return check.result({ username, pin });
+  }
+  function lastAdminProblem(users, username, next) {
+    const remaining = users.filter((user) => {
+      const view = user.username === username ? next : user;
+      return view !== null && view.role === "admin" && view.status === "active";
+    });
+    return remaining.length === 0 ? "\u0E15\u0E49\u0E2D\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E44\u0E14\u0E49\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E19\u0E49\u0E2D\u0E22 1 \u0E04\u0E19" : null;
+  }
+  var COLLEGE_ACCOUNTS = [
+    { username: "shoyu", displayName: "shoyu", department: "\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A", role: "admin" },
+    { username: "watcharapong", displayName: "\u0E19\u0E32\u0E22\u0E27\u0E31\u0E0A\u0E23\u0E1E\u0E07\u0E28\u0E4C \u0E42\u0E2A\u0E20\u0E32", department: "\u0E07\u0E32\u0E19\u0E28\u0E39\u0E19\u0E22\u0E4C\u0E14\u0E34\u0E08\u0E34\u0E17\u0E31\u0E25\u0E41\u0E25\u0E30\u0E2A\u0E37\u0E48\u0E2D\u0E2A\u0E32\u0E23\u0E2D\u0E07\u0E04\u0E4C\u0E01\u0E23", role: "inspector" },
+    { username: "ekkarat", displayName: "\u0E19\u0E32\u0E22\u0E40\u0E2D\u0E01\u0E23\u0E32\u0E0A \u0E40\u0E02\u0E35\u0E22\u0E27\u0E17\u0E2D\u0E07", department: "\u0E07\u0E32\u0E19\u0E28\u0E39\u0E19\u0E22\u0E4C\u0E14\u0E34\u0E08\u0E34\u0E17\u0E31\u0E25\u0E41\u0E25\u0E30\u0E2A\u0E37\u0E48\u0E2D\u0E2A\u0E32\u0E23\u0E2D\u0E07\u0E04\u0E4C\u0E01\u0E23", role: "endorser" },
+    { username: "chatree", displayName: "\u0E19\u0E32\u0E22\u0E0A\u0E32\u0E15\u0E23\u0E35 \u0E40\u0E23\u0E34\u0E07\u0E0A\u0E31\u0E22\u0E20\u0E39\u0E21\u0E34", department: "\u0E1D\u0E48\u0E32\u0E22\u0E1E\u0E31\u0E12\u0E19\u0E32\u0E22\u0E38\u0E17\u0E18\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C\u0E41\u0E25\u0E30\u0E41\u0E1C\u0E19\u0E07\u0E32\u0E19", role: "director" }
+  ];
 
   // shared/auth/session.ts
   var SEPARATOR = "|";

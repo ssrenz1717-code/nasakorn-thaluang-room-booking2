@@ -49,10 +49,9 @@ function runSelfTest() {
     const missing = [];
     if (getProp_(PROP_SPREADSHEET_ID) === '') missing.push('SPREADSHEET_ID');
     if (getProp_(PROP_SESSION_SECRET) === '') missing.push('SESSION_SECRET');
-    if (getProp_(PROP_OAUTH_CLIENT_ID) === '') missing.push('OAUTH_CLIENT_ID');
-    if (getProp_(PROP_BOOTSTRAP_ADMIN) === '') missing.push('BOOTSTRAP_ADMIN_EMAIL');
-    if (missing.length > 0) throw new Error(`ยังไม่ได้ตั้ง: ${missing.join(', ')}`);
-    return 'ครบทั้ง 4 ค่า';
+    if (getProp_(PROP_PIN_PEPPER) === '') missing.push('PIN_PEPPER');
+    if (missing.length > 0) throw new Error(`ยังไม่ได้ตั้ง: ${missing.join(', ')} — รัน setupSystem()`);
+    return 'ครบทั้ง 3 ค่า';
   });
 
   check('เปิดไฟล์ข้อมูลได้', function () {
@@ -82,7 +81,7 @@ function runSelfTest() {
   check('ออกและตรวจ session token ได้ด้วยกุญแจจริง', function () {
     const now = serverNow_().getTime();
     const token = Domain.createSessionToken(
-      { email: 'selftest@example.com', role: 'staff', tokenVersion: 1, expiresAt: now + 60000 },
+      { email: 'selftest', role: 'staff', tokenVersion: 1, expiresAt: now + 60000 },
       sessionSecret_(),
       hmacBase64_,
     );
@@ -105,11 +104,17 @@ function runSelfTest() {
     return 'หัวข้อที่เป็นสูตรถูกบังคับเป็นข้อความ';
   });
 
-  check('การสร้างผู้ดูแลคนแรกถูกคุมไว้', function () {
-    const exists = adminExists_();
-    return exists
-      ? 'มีผู้ดูแลในระบบแล้ว — ประตูสร้างผู้ดูแลคนแรกปิดอยู่'
-      : 'ยังไม่มีผู้ดูแล — อีเมลใน BOOTSTRAP_ADMIN_EMAIL จะกลายเป็นผู้ดูแลตอนล็อกอินครั้งแรก';
+  check('มีผู้ดูแลระบบที่ใช้งานได้', function () {
+    if (!adminExists_()) throw new Error('ยังไม่มีผู้ดูแล — รัน setupSystem() เพื่อสร้างบัญชี shoyu');
+    return 'มีผู้ดูแลอย่างน้อย 1 คน';
+  });
+
+  check('hash PIN ตรวจกลับได้และแยก salt จริง', function () {
+    const a = newPinCredential_('selftest', '240617');
+    if (!Domain.constantTimeEqual(pinHash_('selftest', a.pinSalt, '240617'), a.pinHash)) throw new Error('PIN ที่ถูกต้องตรวจไม่ผ่าน');
+    if (Domain.constantTimeEqual(pinHash_('selftest', a.pinSalt, '240618'), a.pinHash)) throw new Error('PIN ผิดตรวจผ่าน — ร้ายแรงมาก');
+    if (newPinCredential_('selftest', '240617').pinHash === a.pinHash) throw new Error('salt ไม่สุ่ม');
+    return 'PIN ผิดไม่ผ่าน และ PIN เดียวกันได้ hash ต่างกัน';
   });
 
   check('กลไกกันการยิงเข้าสู่ระบบรัว ๆ พร้อมใช้', function () {

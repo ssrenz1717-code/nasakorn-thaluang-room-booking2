@@ -58,11 +58,10 @@ jobs:
 
       - name: build หน้าเว็บ
         working-directory: web
-        # ถ้ายังไม่ตั้งค่าสองตัวนี้ใน Settings > Secrets and variables > Actions > Variables
+        # ถ้ายังไม่ตั้งค่านี้ใน Settings > Secrets and variables > Actions > Variables
         # หน้าเว็บจะ build ออกมาเป็นโหมดสาธิตโดยอัตโนมัติ และบอกผู้ใช้ตรง ๆ ว่ายังไม่เชื่อมต่อ
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
-          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
         run: npm run build
 
       - uses: actions/configure-pages@v5

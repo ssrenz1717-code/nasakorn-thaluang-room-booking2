@@ -9,8 +9,11 @@ function publicRoom_(row) {
   };
 }
 
+/** ผู้ใช้ที่ผู้ดูแลจำกัดห้องไว้ เห็นเฉพาะห้องที่ได้รับสิทธิ์ (ผู้ดูแลเห็นทุกห้อง) */
 function listRooms_(user) {
-  return { rooms: readAll_(Domain.SHEET_ROOMS).objects.map(publicRoom_) };
+  return { rooms: readAll_(Domain.SHEET_ROOMS).objects.map(publicRoom_).filter(function (room) {
+    return Domain.canUseRoom(user, room.roomId);
+  }) };
 }
 
 function publicBooking_(row) {
@@ -65,6 +68,9 @@ function createBooking_(user, raw) {
     const roomRow = findByKey_(Domain.SHEET_ROOMS, input.roomId);
     if (!roomRow) throw appError_(ERROR_CODES.NOT_FOUND, 'ไม่พบห้องประชุม');
     const room = publicRoom_(roomRow);
+    if (!Domain.canUseRoom(user, room.roomId)) {
+      throw appError_(ERROR_CODES.FORBIDDEN, 'บัญชีของคุณยังไม่ได้รับสิทธิ์จองห้องนี้ กรุณาติดต่อผู้ดูแลระบบ');
+    }
     const bookingRows = readAll_(Domain.SHEET_BOOKINGS).objects;
     const activeCount = bookingRows.filter(function (row) {
       return String(row.userEmail) === user.email && ['pending', 'confirmed'].indexOf(String(row.status)) >= 0;
