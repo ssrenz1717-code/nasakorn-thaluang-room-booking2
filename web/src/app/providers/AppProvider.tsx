@@ -29,7 +29,8 @@ interface AppState {
   serverTime: Date | null;
   dataVersion: number;
   bootError: string | null;
-  signIn(username: string, pin: string): Promise<void>;
+  /** ขั้นที่ 2 ของการเข้าสู่ระบบ (ขั้นที่ 1 หน้าเข้าสู่ระบบเรียก api.login เอง) */
+  signInWithPin(challenge: string, pin: string): Promise<void>;
   signOut(): void;
   retryBoot(): void;
 }
@@ -112,9 +113,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [api, isDemo, applyBootstrap, bootAttempt]);
 
-  const signIn = useCallback(
-    async (username: string, pin: string) => {
-      const result = await api.login(username, pin);
+  const signInWithPin = useCallback(
+    async (challenge: string, pin: string) => {
+      const result = await api.loginPin(challenge, pin);
       const boot = await api.bootstrap(result.token);
       writeLocal(TOKEN_KEY, result.token);
       setToken(result.token);
@@ -148,7 +149,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       serverTime,
       dataVersion,
       bootError,
-      signIn,
+      signInWithPin,
       signOut,
       retryBoot,
     }),
@@ -163,7 +164,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       serverTime,
       dataVersion,
       bootError,
-      signIn,
+      signInWithPin,
       signOut,
       retryBoot,
     ],

@@ -31,14 +31,35 @@ function renderApp() {
 }
 
 const PINS: Record<string, string> = Object.fromEntries(DEMO_LOGINS.map((login) => [login.username, login.pin]));
+const PASSWORDS: Record<string, string> = Object.fromEntries(DEMO_LOGINS.map((login) => [login.username, login.password]));
 
-/** กรอกหน้าเข้าสู่ระบบ (ต้องอยู่ที่หน้านั้นแล้ว) แล้วรอจนเห็นเมนูหลัก */
-async function signInAs(username: string, pin = PINS[username] ?? '') {
+/** ขั้นที่ 1: ชื่อผู้ใช้ + รหัสผ่าน (ต้องอยู่ที่หน้าเข้าสู่ระบบแล้ว) */
+async function enterPassword(username: string, password = PASSWORDS[username] ?? '') {
   const field = await screen.findByLabelText('ชื่อผู้ใช้', {}, { timeout: 5000 });
   fireEvent.change(field, { target: { value: username } });
-  fireEvent.change(screen.getByLabelText(/^PIN/), { target: { value: pin } });
+  fireEvent.change(screen.getByLabelText('รหัสผ่าน'), { target: { value: password } });
+  fireEvent.click(screen.getByRole('button', { name: 'ถัดไป' }));
+}
+
+/** ขั้นที่ 2: ใส่ PIN ในหน้าถัดไป */
+async function enterPin(pin: string) {
+  fireEvent.change(await screen.findByLabelText(/^PIN/, {}, { timeout: 3000 }), { target: { value: pin } });
   fireEvent.click(screen.getByRole('button', { name: 'เข้าสู่ระบบ' }));
+}
+
+/** เข้าสู่ระบบครบ 2 ขั้น แล้วรอจนเห็นเมนูหลัก */
+async function signInAs(username: string, pin = PINS[username] ?? '', password = PASSWORDS[username] ?? '') {
+  await enterPassword(username, password);
+  await enterPin(pin);
   return screen.findByRole('navigation', { name: 'เมนูหลัก' }, { timeout: 5000 });
+}
+
+/** กดลงนามแล้วยืนยันด้วย PIN ในหน้าต่างที่เด้งขึ้น */
+async function signWithPin(user: ReturnType<typeof userEvent.setup>, button: HTMLElement, pin: string) {
+  await user.click(button);
+  const dialog = await screen.findByRole('dialog', { name: 'ยืนยันการลงนามด้วย PIN' });
+  fireEvent.change(within(dialog).getByLabelText(/^PIN/), { target: { value: pin } });
+  await user.click(within(dialog).getByRole('button', { name: 'ลงนาม' }));
 }
 
 /** เปิดเว็บแล้วเข้าระบบ (ค่าเริ่มต้น: ผู้ดูแล shoyu) — ถ้ายังมี session ค้างจะเข้าหน้าหลักเลย */
@@ -174,25 +195,35 @@ describe('เมนูและการเข้าถึงหน้าต่�
 });
 
 describe('สิทธิ์ผู้ใช้', () => {
-  it('ออกจากระบบแล้วกลับไปหน้าเข้าสู่ระบบ', async () => {
+  it('ออกจากระบบแล้วกลับไปหน้าเข้าสู่ระบบ (หน้าแรกเป็นรหัสผ่าน ไม่ใช่ PIN)', async () => {
     const { user } = await openApp();
     await signOutVia(user);
     expect(screen.getByLabelText('ชื่อผู้ใช้')).toBeDefined();
+    expect((screen.getByLabelText('รหัสผ่าน') as HTMLInputElement).type).toBe('password');
+    expect(screen.queryByLabelText(/^PIN/)).toBeNull();
   });
 
-  it('PIN ผิดเข้าไม่ได้ และบอกข้อความเดียวกับชื่อผู้ใช้ผิด', async () => {
+  it('รหัสผ่านผิดไม่ได้ไปหน้า PIN และบอกข้อความเดียวกับชื่อผู้ใช้ผิด', async () => {
     renderApp();
-    const field = await screen.findByLabelText('ชื่อผู้ใช้', {}, { timeout: 5000 });
-    fireEvent.change(field, { target: { value: 'shoyu' } });
-    fireEvent.change(screen.getByLabelText(/^PIN/), { target: { value: '999999' } });
-    fireEvent.click(screen.getByRole('button', { name: 'เข้าสู่ระบบ' }));
-    expect(await screen.findByText('ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง', {}, { timeout: 3000 })).toBeDefined();
+    await enterPassword('shoyu', 'WrongPass99');
+    expect(await screen.findByText('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', {}, { timeout: 3000 })).toBeDefined();
+    expect(screen.queryByRole('heading', { name: /ใส่ PIN/ })).toBeNull();
 
-    fireEvent.change(field, { target: { value: 'nobody' } });
-    fireEvent.change(screen.getByLabelText(/^PIN/), { target: { value: '999999' } });
-    fireEvent.click(screen.getByRole('button', { name: 'เข้าสู่ระบบ' }));
-    await waitFor(() => expect(screen.getByText('ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง')).toBeDefined(), { timeout: 3000 });
+    await enterPassword('nobody', 'WrongPass99');
+    await waitFor(() => expect(screen.getByText('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง')).toBeDefined(), { timeout: 3000 });
     expect(screen.queryByRole('navigation', { name: 'เมนูหลัก' })).toBeNull();
+  });
+
+  it('รหัสผ่านถูกแล้วไปอีกหน้าให้ใส่ PIN, PIN ผิดยังเข้าไม่ได้ ใส่ถูกจึงเข้าได้', async () => {
+    renderApp();
+    await enterPassword('shoyu');
+    expect(await screen.findByRole('heading', { level: 1, name: /ใส่ PIN/ }, { timeout: 3000 })).toBeDefined();
+    expect(screen.queryByLabelText('รหัสผ่าน')).toBeNull();
+    await enterPin('999999');
+    expect(await screen.findByText('PIN ไม่ถูกต้อง', {}, { timeout: 3000 })).toBeDefined();
+    expect(screen.queryByRole('navigation', { name: 'เมนูหลัก' })).toBeNull();
+    await enterPin(PINS.shoyu!);
+    expect(await screen.findByRole('navigation', { name: 'เมนูหลัก' }, { timeout: 5000 })).toBeDefined();
   });
 
   it('พนักงานไม่เห็นเมนูของผู้ดูแลระบบ', async () => {
@@ -213,18 +244,19 @@ describe('สิทธิ์ผู้ใช้', () => {
     const dialog = await screen.findByRole('dialog', { name: 'เพิ่มผู้ใช้' });
     fireEvent.change(within(dialog).getByLabelText('ชื่อ-นามสกุล'), { target: { value: 'นางสาวทดสอบ ระบบ' } });
     fireEvent.change(within(dialog).getByLabelText(/ชื่อผู้ใช้/), { target: { value: 'tester' } });
+    fireEvent.change(within(dialog).getByLabelText('รหัสผ่านแรกเข้า'), { target: { value: 'Tester2026' } });
     fireEvent.change(within(dialog).getByLabelText(/PIN แรกเข้า/), { target: { value: '582039' } });
     await user.click(within(dialog).getByRole('radio', { name: 'เลือกเฉพาะบางห้อง' }));
     await user.click(within(dialog).getByRole('checkbox', { name: 'ห้องประชุมสักทอง' }));
     await user.click(within(dialog).getByRole('button', { name: 'เพิ่มผู้ใช้' }));
 
-    // PIN ที่ออกให้ค้างอยู่บนหน้าจนกดรับทราบ
-    const notice = await screen.findByText('PIN ของ นางสาวทดสอบ ระบบ', {}, { timeout: 3000 });
-    expect(notice).toBeDefined();
+    // รหัสผ่านและ PIN ที่ออกให้ค้างอยู่บนหน้าจนกดรับทราบ
+    expect(await screen.findByText('ข้อมูลเข้าสู่ระบบของ นางสาวทดสอบ ระบบ', {}, { timeout: 3000 })).toBeDefined();
     expect(screen.getByText('582039')).toBeDefined();
+    expect(screen.getByText('Tester2026')).toBeDefined();
 
     await signOutVia(user);
-    const testerNav = await signInAs('tester', '582039');
+    const testerNav = await signInAs('tester', '582039', 'Tester2026');
     await goTo(user, testerNav, 'จองห้องประชุม');
     await waitFor(() => expect(screen.getAllByText('ห้องประชุมสักทอง').length).toBeGreaterThan(0), { timeout: 3000 });
     expect(screen.queryByText('หอประชุมอดิเรกสาร')).toBeNull();
@@ -241,14 +273,30 @@ describe('สิทธิ์ผู้ใช้', () => {
     const dialog = await screen.findByRole('dialog');
     fireEvent.change(within(dialog).getByLabelText(/PIN ใหม่/), { target: { value: '730264' } });
     await user.click(within(dialog).getByRole('button', { name: 'ตั้ง PIN ใหม่' }));
-    await screen.findByText('PIN ของ ครูทดลอง ใจดี', {}, { timeout: 3000 });
+    await screen.findByText('ข้อมูลเข้าสู่ระบบของ ครูทดลอง ใจดี', {}, { timeout: 3000 });
 
     await signOutVia(user);
-    fireEvent.change(screen.getByLabelText('ชื่อผู้ใช้'), { target: { value: 'teacher' } });
-    fireEvent.change(screen.getByLabelText(/^PIN/), { target: { value: PINS.teacher } });
-    fireEvent.click(screen.getByRole('button', { name: 'เข้าสู่ระบบ' }));
-    expect(await screen.findByText('ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง', {}, { timeout: 3000 })).toBeDefined();
-    await signInAs('teacher', '730264');
+    await enterPassword('teacher');
+    await enterPin(PINS.teacher!);
+    expect(await screen.findByText('PIN ไม่ถูกต้อง', {}, { timeout: 3000 })).toBeDefined();
+    await enterPin('730264');
+    expect(await screen.findByRole('navigation', { name: 'เมนูหลัก' }, { timeout: 5000 })).toBeDefined();
+  }, 30_000);
+
+  it('รีเซ็ตรหัสผ่านแล้วรหัสผ่านเดิมเข้าไม่ได้ รหัสใหม่เข้าได้ (PIN เดิม)', async () => {
+    const { user, nav } = await openApp();
+    await goTo(user, nav, 'จัดการผู้ใช้');
+    const row = (await screen.findByText('ครูทดลอง ใจดี', { selector: 'p' }, { timeout: 3000 })).closest('li')!;
+    await user.click(within(row).getByRole('button', { name: /รีเซ็ตรหัสผ่าน/ }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('รหัสผ่านใหม่'), { target: { value: 'NewTeach88' } });
+    await user.click(within(dialog).getByRole('button', { name: 'ตั้งรหัสผ่านใหม่' }));
+    await screen.findByText('ข้อมูลเข้าสู่ระบบของ ครูทดลอง ใจดี', {}, { timeout: 3000 });
+
+    await signOutVia(user);
+    await enterPassword('teacher');
+    expect(await screen.findByText('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', {}, { timeout: 3000 })).toBeDefined();
+    await signInAs('teacher', PINS.teacher, 'NewTeach88');
   }, 30_000);
 });
 
@@ -349,19 +397,24 @@ describe('เมนูซ้าย: ย่อได้ และมีป้า�
     // ขั้น 1: เจ้าหน้าที่ตรวจห้องเห็นเฉพาะของตัวเอง 1 รายการ
     await switchTo('watcharapong');
     await user.click(await within(nav).findByRole('link', { name: /^อนุมัติการใช้ห้อง.*มี 1 รายการ/ }, { timeout: 3000 }));
-    await user.click(await screen.findByRole('button', { name: 'ห้องพร้อม ส่งต่อผู้รับรอง' }, { timeout: 3000 }));
+    // PIN ผิด: ยังไม่ลงนาม หน้าต่างยังเปิดอยู่ให้ลองใหม่
+    await signWithPin(user, await screen.findByRole('button', { name: 'ห้องพร้อม ส่งต่อผู้รับรอง' }, { timeout: 3000 }), '999999');
+    expect(await screen.findByText('PIN ไม่ถูกต้อง', {}, { timeout: 3000 })).toBeDefined();
+    const pinDialog = screen.getByRole('dialog', { name: 'ยืนยันการลงนามด้วย PIN' });
+    fireEvent.change(within(pinDialog).getByLabelText(/^PIN/), { target: { value: PINS.watcharapong } });
+    await user.click(within(pinDialog).getByRole('button', { name: 'ลงนาม' }));
     await waitFor(() => expect(within(nav).getByRole('link', { name: 'อนุมัติการใช้ห้อง' })).toBeDefined(), { timeout: 3000 });
 
     // ขั้น 2: ผู้รับรองตอนนี้มี 2 รายการ (รายการที่เพิ่งผ่านขั้น 1 + รายการที่รออยู่แล้ว)
     await switchTo('ekkarat');
     await within(nav).findByRole('link', { name: /^อนุมัติการใช้ห้อง.*มี 2 รายการ/ }, { timeout: 3000 });
     const endorse = await screen.findAllByRole('button', { name: 'รับรอง ส่งต่อผู้อนุมัติ' }, { timeout: 3000 });
-    await user.click(endorse[0]!);
+    await signWithPin(user, endorse[0]!, PINS.ekkarat!);
     await within(nav).findByRole('link', { name: /^อนุมัติการใช้ห้อง.*มี 1 รายการ/ }, { timeout: 3000 });
 
     // ขั้น 3: ผู้อนุมัติกดแล้วรายการนั้นยืนยันแล้ว
     await switchTo('chatree');
-    await user.click(await screen.findByRole('button', { name: 'อนุมัติการใช้ห้อง' }, { timeout: 3000 }));
+    await signWithPin(user, await screen.findByRole('button', { name: 'อนุมัติการใช้ห้อง' }, { timeout: 3000 }), PINS.chatree!);
     await waitFor(() => expect(within(nav).getByRole('link', { name: 'อนุมัติการใช้ห้อง' })).toBeDefined(), { timeout: 3000 });
   }, 30_000);
 });

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { KeyRound, Pencil, Search, Shuffle, Trash2, UserPlus } from 'lucide-react';
+import { KeyRound, LockKeyhole, Pencil, Search, Shuffle, Trash2, UserPlus } from 'lucide-react';
 import { APPROVAL_STEPS } from '@shared/domain/approval';
 import {
-  PIN_LENGTH, USER_ROLE_LABEL_TH, USER_ROLES, pinProblem, validateUserAccountInput, type UserRole,
+  PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PIN_LENGTH, USER_ROLE_LABEL_TH, USER_ROLES, passwordProblem, pinProblem,
+  validateUserAccountInput, type UserRole,
 } from '@shared/schemas/user';
 import { useApp, useCurrentUser } from '../../app/providers/AppProvider';
 import type { AdminUser } from '../../lib/api/types';
@@ -41,17 +42,28 @@ function randomPin(): string {
   }
 }
 
+/** รหัสผ่านสุ่ม 10 ตัว ตัดตัวที่อ่านสับสน (0/O, 1/l/I) ออก ให้จดส่งต่อง่าย */
+function randomPassword(): string {
+  const pool = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  for (;;) {
+    const password = Array.from(crypto.getRandomValues(new Uint8Array(10)), (byte) => pool[byte % pool.length]).join('');
+    if (passwordProblem(password) === null) return password;
+  }
+}
+
 const loginText = (iso: string) => iso === ''
   ? 'ยังไม่เคยเข้าสู่ระบบ'
   : `เข้าล่าสุด ${new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' }).format(new Date(iso))}`;
 
-interface Issued { displayName: string; username: string; pin: string }
+/** รหัสที่เพิ่งออกให้ — ช่องที่ไม่ได้เปลี่ยนเป็น undefined */
+interface Issued { displayName: string; username: string; pin?: string; password?: string }
 type DoneFn = (message: string, credential?: Issued) => void;
 
 type Panel =
   | { kind: 'create' }
   | { kind: 'edit'; user: AdminUser }
   | { kind: 'pin'; user: AdminUser }
+  | { kind: 'password'; user: AdminUser }
   | { kind: 'delete'; user: AdminUser };
 
 export function UsersPage() {
@@ -97,15 +109,16 @@ export function UsersPage() {
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="จัดการผู้ใช้"
-        description="เพิ่มบัญชี ตั้ง PIN กำหนดสิทธิ์อนุมัติ และเลือกห้องที่แต่ละคนจองได้"
+        description="เพิ่มบัญชี ตั้งรหัสผ่านและ PIN กำหนดสิทธิ์อนุมัติ และเลือกห้องที่แต่ละคนจองได้"
         action={<Button icon={<UserPlus className="size-4" />} onClick={() => setPanel({ kind: 'create' })}>เพิ่มผู้ใช้</Button>}
       />
 
       {issued !== null && (
-        <Alert tone="ok" title={`PIN ของ ${issued.displayName}`} className="mb-6">
+        <Alert tone="ok" title={`ข้อมูลเข้าสู่ระบบของ ${issued.displayName}`} className="mb-6">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
             <p>ชื่อผู้ใช้ <strong className="font-semibold">{issued.username}</strong></p>
-            <p>PIN <strong className="font-semibold tabular-nums tracking-[0.2em]">{issued.pin}</strong></p>
+            {issued.password !== undefined && <p>รหัสผ่าน <strong className="font-semibold">{issued.password}</strong></p>}
+            {issued.pin !== undefined && <p>PIN <strong className="font-semibold tabular-nums tracking-[0.2em]">{issued.pin}</strong></p>}
             <Button size="sm" variant="secondary" onClick={() => setIssued(null)}>จดแล้ว ปิดข้อความนี้</Button>
           </div>
           <p className="mt-1 text-sm">ส่งให้เจ้าของบัญชีโดยตรง ปิดข้อความนี้แล้วดูย้อนหลังไม่ได้</p>
@@ -168,6 +181,7 @@ export function UsersPage() {
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <Button size="sm" variant="secondary" icon={<Pencil className="size-4" />} onClick={() => setPanel({ kind: 'edit', user })}>แก้ไข</Button>
+                    <Button size="sm" variant="secondary" icon={<LockKeyhole className="size-4" />} onClick={() => setPanel({ kind: 'password', user })}>รีเซ็ตรหัสผ่าน</Button>
                     <Button size="sm" variant="secondary" icon={<KeyRound className="size-4" />} onClick={() => setPanel({ kind: 'pin', user })}>รีเซ็ต PIN</Button>
                     {user.email !== me.email && (
                       <Button size="sm" variant="ghost" icon={<Trash2 className="size-4" />} onClick={() => setPanel({ kind: 'delete', user })} aria-label={`ลบ ${user.displayName}`}>ลบ</Button>
@@ -184,6 +198,7 @@ export function UsersPage() {
         <UserFormDialog user={panel.kind === 'edit' ? panel.user : null} isSelf={panel.kind === 'edit' && panel.user.email === me.email} rooms={rooms} onClose={close} onDone={done} />
       )}
       {panel?.kind === 'pin' && <ResetPinDialog user={panel.user} onClose={close} onDone={done} />}
+      {panel?.kind === 'password' && <ResetPasswordDialog user={panel.user} onClose={close} onDone={done} />}
       {panel?.kind === 'delete' && <DeleteUserDialog user={panel.user} onClose={close} onDone={done} />}
     </div>
   );
@@ -202,6 +217,7 @@ function UserFormDialog({
   const [limitRooms, setLimitRooms] = useState((user?.allowedRoomIds.length ?? 0) > 0);
   const [roomIds, setRoomIds] = useState<string[]>(user?.allowedRoomIds ?? []);
   const [pin, setPin] = useState(() => (creating ? randomPin() : ''));
+  const [password, setPassword] = useState(() => (creating ? randomPassword() : ''));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -211,17 +227,17 @@ function UserFormDialog({
     event.preventDefault();
     const input = {
       username, displayName, department, role, status: active ? 'active' : 'disabled',
-      allowedRoomIds: limitRooms && role !== 'admin' ? roomIds : [], pin,
+      allowedRoomIds: limitRooms && role !== 'admin' ? roomIds : [], pin, password,
     } as const;
     if (limitRooms && role !== 'admin' && roomIds.length === 0) { setError('เลือกห้องอย่างน้อย 1 ห้อง หรือเลือก "ทุกห้อง"'); return; }
     const parsed = validateUserAccountInput(input, { requirePin: creating });
     if (!parsed.ok) { setError(parsed.issues.map((issue) => issue.message).join(' · ')); return; }
     setBusy(true);
     setError(null);
-    const { pin: newPin, ...account } = parsed.value;
+    const { pin: newPin, password: newPassword, ...account } = parsed.value;
     (creating ? api.createUser(token, parsed.value) : api.updateUser(token, account))
       .then(() => (creating
-        ? onDone(`เพิ่ม ${account.displayName} แล้ว`, { displayName: account.displayName, username: account.username, pin: newPin })
+        ? onDone(`เพิ่ม ${account.displayName} แล้ว`, { displayName: account.displayName, username: account.username, password: newPassword, pin: newPin })
         : onDone(`บันทึก ${account.displayName} แล้ว`)))
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'บันทึกไม่สำเร็จ'))
       .finally(() => setBusy(false));
@@ -231,7 +247,7 @@ function UserFormDialog({
     <Dialog
       labelId="user-form-title"
       title={creating ? 'เพิ่มผู้ใช้' : `แก้ไข ${user.displayName}`}
-      description={creating ? 'จด PIN ไว้ให้เจ้าของบัญชี ระบบไม่เก็บ PIN จริงและดูย้อนหลังไม่ได้' : `ชื่อผู้ใช้ ${user.email}`}
+      description={creating ? 'จดรหัสผ่านและ PIN ไว้ให้เจ้าของบัญชี ระบบไม่เก็บค่าจริงและดูย้อนหลังไม่ได้' : `ชื่อผู้ใช้ ${user.email}`}
       onClose={onClose}
       footer={<>
         <Button variant="secondary" onClick={onClose}>ยกเลิก</Button>
@@ -263,13 +279,27 @@ function UserFormDialog({
 
         {creating && (
           <div>
-            <label className={labelClass} htmlFor="uf-pin">PIN แรกเข้า {PIN_LENGTH} หลัก</label>
+            <label className={labelClass} htmlFor="uf-password">รหัสผ่านแรกเข้า</label>
+            <div className="flex gap-2">
+              <input
+                id="uf-password" className={cn(inputClass, 'min-w-0 flex-1')} maxLength={PASSWORD_MAX_LENGTH}
+                value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" spellCheck={false} required
+              />
+              <Button variant="secondary" icon={<Shuffle className="size-4" />} onClick={() => setPassword(randomPassword())} aria-label="สุ่มรหัสผ่านใหม่">สุ่มใหม่</Button>
+            </div>
+            <p className="mt-1 text-xs text-ink-muted">อย่างน้อย {PASSWORD_MIN_LENGTH} ตัว มีทั้งตัวอักษรภาษาอังกฤษและตัวเลข</p>
+          </div>
+        )}
+
+        {creating && (
+          <div>
+            <label className={labelClass} htmlFor="uf-pin">PIN แรกเข้า {PIN_LENGTH} หลัก <span className="font-normal text-ink-subtle">(ใช้หน้าที่ 2 ตอนเข้าระบบ และตอนลงนามอนุมัติ)</span></label>
             <div className="flex gap-2">
               <input
                 id="uf-pin" className={cn(inputClass, 'min-w-0 flex-1 tabular-nums tracking-[0.3em]')} inputMode="numeric" maxLength={PIN_LENGTH}
                 value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))} required
               />
-              <Button variant="secondary" icon={<Shuffle className="size-4" />} onClick={() => setPin(randomPin())}>สุ่มใหม่</Button>
+              <Button variant="secondary" icon={<Shuffle className="size-4" />} onClick={() => setPin(randomPin())} aria-label="สุ่ม PIN ใหม่">สุ่มใหม่</Button>
             </div>
           </div>
         )}
@@ -357,7 +387,7 @@ function ResetPinDialog({ user, onClose, onDone }: { user: AdminUser; onClose: (
     <Dialog
       labelId="reset-pin-title"
       title={`รีเซ็ต PIN · ${user.displayName}`}
-      description="PIN เดิมใช้ไม่ได้ทันที และทุกเครื่องที่เข้าสู่ระบบด้วยบัญชีนี้จะถูกออกจากระบบ"
+      description="PIN เดิมใช้ไม่ได้ทันที และทุกเครื่องที่เข้าสู่ระบบด้วยบัญชีนี้จะถูกออกจากระบบ (รหัสผ่านยังเหมือนเดิม)"
       onClose={onClose}
       footer={<>
         <Button variant="secondary" onClick={onClose}>ยกเลิก</Button>
@@ -375,6 +405,51 @@ function ResetPinDialog({ user, onClose, onDone }: { user: AdminUser; onClose: (
           <Button variant="secondary" icon={<Shuffle className="size-4" />} onClick={() => setPin(randomPin())}>สุ่มใหม่</Button>
         </div>
         <p className="text-sm text-ink-muted">ห้ามเลขซ้ำทั้งหมดหรือเลขเรียง เช่น 000000, 123456</p>
+      </form>
+    </Dialog>
+  );
+}
+
+function ResetPasswordDialog({ user, onClose, onDone }: { user: AdminUser; onClose: () => void; onDone: DoneFn }) {
+  const { api, token } = useApp();
+  const [password, setPassword] = useState(randomPassword);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const problem = passwordProblem(password);
+    if (problem !== null) { setError(problem); return; }
+    setBusy(true);
+    setError(null);
+    api.resetUserPassword(token, user.email, password)
+      .then(() => onDone(`ตั้งรหัสผ่านใหม่ของ ${user.displayName} แล้ว`, { displayName: user.displayName, username: user.email, password }))
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'รีเซ็ตรหัสผ่านไม่สำเร็จ'))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <Dialog
+      labelId="reset-password-title"
+      title={`รีเซ็ตรหัสผ่าน · ${user.displayName}`}
+      description="รหัสผ่านเดิมใช้ไม่ได้ทันที และทุกเครื่องที่เข้าสู่ระบบด้วยบัญชีนี้จะถูกออกจากระบบ (PIN ยังเหมือนเดิม)"
+      onClose={onClose}
+      footer={<>
+        <Button variant="secondary" onClick={onClose}>ยกเลิก</Button>
+        <Button type="submit" form="reset-password-form" loading={busy} loadingLabel="กำลังบันทึก">ตั้งรหัสผ่านใหม่</Button>
+      </>}
+    >
+      <form id="reset-password-form" onSubmit={submit} noValidate className="space-y-3">
+        {error !== null && <Alert tone="danger" title="ใช้รหัสผ่านนี้ไม่ได้"><span role="alert">{error}</span></Alert>}
+        <label className={labelClass} htmlFor="rpw-password">รหัสผ่านใหม่</label>
+        <div className="flex gap-2">
+          <input
+            id="rpw-password" className={cn(inputClass, 'min-w-0 flex-1')} maxLength={PASSWORD_MAX_LENGTH}
+            value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" spellCheck={false}
+          />
+          <Button variant="secondary" icon={<Shuffle className="size-4" />} onClick={() => setPassword(randomPassword())}>สุ่มใหม่</Button>
+        </div>
+        <p className="text-sm text-ink-muted">อย่างน้อย {PASSWORD_MIN_LENGTH} ตัว มีทั้งตัวอักษรภาษาอังกฤษและตัวเลข</p>
       </form>
     </Dialog>
   );

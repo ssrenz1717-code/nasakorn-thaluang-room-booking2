@@ -51,7 +51,7 @@ export function validateUserProfileInput(raw: unknown): ValidationResult<UserPro
   });
 }
 
-/* ---------- บัญชีผู้ใช้ (ชื่อผู้ใช้ + PIN) ---------- */
+/* ---------- บัญชีผู้ใช้ (ชื่อผู้ใช้ + รหัสผ่าน แล้วยืนยัน PIN อีกหน้า) ---------- */
 
 /** ชื่อผู้ใช้: a-z 0-9 . _ - ยาว 3–32 ตัว ไม่สนตัวพิมพ์เล็กใหญ่ (เก็บเป็นตัวเล็กเสมอ) */
 export const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
@@ -77,6 +77,25 @@ export function pinProblem(pin: unknown): string | null {
   return null;
 }
 
+export const PASSWORD_MIN_LENGTH = 8;
+export const PASSWORD_MAX_LENGTH = 72;
+
+/** ตรวจรหัสผ่านใหม่ — อย่างน้อย 8 ตัว มีทั้งตัวอักษรและตัวเลข, null เมื่อผ่าน */
+export function passwordProblem(password: unknown): string | null {
+  if (typeof password !== 'string' || password.length < PASSWORD_MIN_LENGTH) {
+    return `รหัสผ่านต้องยาวอย่างน้อย ${PASSWORD_MIN_LENGTH} ตัว`;
+  }
+  if (password.length > PASSWORD_MAX_LENGTH) return `รหัสผ่านยาวได้ไม่เกิน ${PASSWORD_MAX_LENGTH} ตัว`;
+  if (/\s/.test(password)) return 'รหัสผ่านห้ามมีช่องว่าง';
+  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return 'รหัสผ่านต้องมีทั้งตัวอักษรภาษาอังกฤษและตัวเลข';
+  return null;
+}
+
+/** ข้อความที่นำไป HMAC เป็นค่า hash ของรหัสผ่าน — คนละรูปแบบกับ PIN เพื่อไม่ให้ hash สลับกันใช้ได้ */
+export function passwordDigestMessage(username: string, salt: string, password: string): string {
+  return `password|${normalizeUsername(username)}|${salt}|${password}`;
+}
+
 /** ข้อความที่นำไป HMAC เป็นค่า hash ของ PIN — ใช้รูปแบบเดียวกันทั้ง Apps Script และโหมดทดลอง */
 export function pinDigestMessage(username: string, salt: string, pin: string): string {
   return `pin|${normalizeUsername(username)}|${salt}|${pin}`;
@@ -90,7 +109,7 @@ export function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** ผิดกี่ครั้งติดกันแล้วล็อกบัญชี และล็อกนานเท่าไร */
+/** ผิดกี่ครั้งติดกันแล้วล็อกบัญชี (นับรวมทั้งรหัสผ่านและ PIN) และล็อกนานเท่าไร */
 export const PIN_MAX_FAILURES = 5;
 export const PIN_LOCK_MINUTES = 15;
 
@@ -103,17 +122,29 @@ export function canUseRoom(user: { role: UserRole; allowedRoomIds?: readonly str
 
 export interface LoginInput {
   username: string;
-  pin: string;
+  password: string;
 }
 
+/** ขั้นที่ 1: ชื่อผู้ใช้ + รหัสผ่าน */
 export function validateLoginInput(raw: unknown): ValidationResult<LoginInput> {
   const input = asRecord(raw);
   const check = new Check();
   const username = normalizeUsername(input.username);
   if (username === '') check.fail('username', 'กรุณากรอกชื่อผู้ใช้');
+  const password = typeof input.password === 'string' ? input.password : '';
+  if (password === '') check.fail('password', 'กรุณากรอกรหัสผ่าน');
+  return check.result({ username, password });
+}
+
+/** ขั้นที่ 2: ตั๋วจากขั้นที่ 1 + PIN */
+export function validatePinStepInput(raw: unknown): ValidationResult<{ challenge: string; pin: string }> {
+  const input = asRecord(raw);
+  const check = new Check();
+  const challenge = typeof input.challenge === 'string' ? input.challenge : '';
+  if (challenge === '') check.fail('challenge', 'กรุณาเข้าสู่ระบบด้วยรหัสผ่านก่อน');
   const pin = typeof input.pin === 'string' ? input.pin.trim() : '';
   if (pin === '') check.fail('pin', 'กรุณากรอก PIN');
-  return check.result({ username, pin });
+  return check.result({ challenge, pin });
 }
 
 export interface UserAccountInput {
@@ -134,11 +165,11 @@ function roomIdList(check: Check, raw: unknown): string[] {
   return [...new Set(raw.map((item: string) => item.trim()))];
 }
 
-/** เพิ่ม/แก้บัญชี — สร้างใหม่ต้องมี PIN แรกเข้า (`pin`), แก้ไขไม่ต้องส่ง */
+/** เพิ่ม/แก้บัญชี — สร้างใหม่ต้องมีรหัสผ่านและ PIN แรกเข้า, แก้ไขไม่ต้องส่ง */
 export function validateUserAccountInput(
   raw: unknown,
   options: { requirePin: boolean },
-): ValidationResult<UserAccountInput & { pin: string }> {
+): ValidationResult<UserAccountInput & { pin: string; password: string }> {
   const input = asRecord(raw);
   const check = new Check();
   const username = normalizeUsername(input.username);
@@ -146,9 +177,12 @@ export function validateUserAccountInput(
     check.fail('username', 'ชื่อผู้ใช้ต้องเป็น a-z, 0-9, จุด, ขีด ยาว 3–32 ตัว');
   }
   const pin = typeof input.pin === 'string' ? input.pin.trim() : '';
+  const password = typeof input.password === 'string' ? input.password : '';
   if (options.requirePin) {
-    const problem = pinProblem(pin);
-    if (problem !== null) check.fail('pin', problem);
+    const pinIssue = pinProblem(pin);
+    if (pinIssue !== null) check.fail('pin', pinIssue);
+    const passwordIssue = passwordProblem(password);
+    if (passwordIssue !== null) check.fail('password', passwordIssue);
   }
   return check.result({
     username,
@@ -158,6 +192,7 @@ export function validateUserAccountInput(
     status: check.oneOf('status', input.status, USER_STATUSES, { label: 'สถานะผู้ใช้', fallback: 'active' }),
     allowedRoomIds: roomIdList(check, input.allowedRoomIds),
     pin,
+    password,
   });
 }
 
@@ -170,6 +205,17 @@ export function validateResetPinInput(raw: unknown): ValidationResult<{ username
   const problem = pinProblem(pin);
   if (problem !== null) check.fail('pin', problem);
   return check.result({ username, pin });
+}
+
+export function validateResetPasswordInput(raw: unknown): ValidationResult<{ username: string; password: string }> {
+  const input = asRecord(raw);
+  const check = new Check();
+  const username = normalizeUsername(input.username);
+  if (username === '') check.fail('username', 'ไม่ได้ระบุผู้ใช้');
+  const password = typeof input.password === 'string' ? input.password : '';
+  const problem = passwordProblem(password);
+  if (problem !== null) check.fail('password', problem);
+  return check.result({ username, password });
 }
 
 /**
@@ -189,7 +235,7 @@ export function lastAdminProblem(
 }
 
 /**
- * บัญชีตั้งต้นของวิทยาลัย — สคริปต์ติดตั้งสร้างให้ (สุ่ม PIN แล้วพิมพ์ลง log ให้เจ้าของสคริปต์)
+ * บัญชีตั้งต้นของวิทยาลัย — สคริปต์ติดตั้งสร้างให้ (สุ่มรหัสผ่านและ PIN แล้วพิมพ์ลง log ให้เจ้าของสคริปต์)
  * ชื่อผู้ลงนามตรงกับแบบคำขอใช้ห้องประชุม (domain/approval.ts)
  */
 export const COLLEGE_ACCOUNTS: readonly { username: string; displayName: string; department: string; role: UserRole }[] = [

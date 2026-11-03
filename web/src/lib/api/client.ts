@@ -2,7 +2,7 @@
 
 import { createDemoTransport } from './demo';
 import { createHttpTransport } from './transport';
-import type { AdminUser, BootstrapResult, LoginResult, SessionUser, Transport, VersionResult } from './types';
+import type { AdminUser, BootstrapResult, LoginResult, PasswordStepResult, SessionUser, Transport, VersionResult } from './types';
 import type { UserAccountInput } from '@shared/schemas/user';
 import type { DemoBooking, DemoRoom } from './demo';
 import type { BookingRequest } from '@shared/schemas/booking';
@@ -26,8 +26,10 @@ function announceBookingsChanged<T>(result: Promise<T>): Promise<T> {
 export interface ApiClient {
   readonly mode: 'http' | 'demo';
   ping(): Promise<{ pong: boolean; serverTime: string }>;
-  /** เข้าสู่ระบบด้วยชื่อผู้ใช้ + PIN (ทั้งระบบจริงและโหมดข้อมูลในเบราว์เซอร์) */
-  login(username: string, pin: string): Promise<LoginResult>;
+  /** ขั้นที่ 1: ชื่อผู้ใช้ + รหัสผ่าน -> ตั๋วรอ PIN */
+  login(username: string, password: string): Promise<PasswordStepResult>;
+  /** ขั้นที่ 2: ตั๋ว + PIN -> session */
+  loginPin(challenge: string, pin: string): Promise<LoginResult>;
   me(token: string): Promise<{ user: SessionUser }>;
   bootstrap(token: string): Promise<BootstrapResult>;
   version(): Promise<VersionResult>;
@@ -37,7 +39,8 @@ export interface ApiClient {
   availability(token: string, roomId: string, dateKey: string): Promise<{ busy: BusySlot[] }>;
   createBooking(token: string, input: BookingRequest): Promise<{ booking: DemoBooking }>;
   cancelBooking(token: string, bookingId: string, reason?: string): Promise<{ booking: DemoBooking }>;
-  decideBooking(token: string, bookingId: string, decision: 'approve'|'reject', reason?: string): Promise<{ booking: DemoBooking }>;
+  /** ลงนาม — ต้องแนบ PIN ของผู้ลงนามทุกครั้ง (แทนลายเซ็น) */
+  decideBooking(token: string, bookingId: string, decision: 'approve'|'reject', pin: string, reason?: string): Promise<{ booking: DemoBooking }>;
   /** ประกาศที่ยังแสดงอยู่ (ทุกคนอ่านได้) */
   announcements(token: string): Promise<{ announcements: Announcement[] }>;
   /** เพิ่ม (announcementId = '') หรือแก้ประกาศ — เฉพาะผู้ดูแล */
@@ -45,9 +48,10 @@ export interface ApiClient {
   archiveAnnouncement(token: string, announcementId: string): Promise<{ ok: boolean }>;
   /** จัดการผู้ใช้ — เฉพาะผู้ดูแล */
   users(token: string): Promise<{ users: AdminUser[] }>;
-  createUser(token: string, input: UserAccountInput & { pin: string }): Promise<{ user: AdminUser }>;
+  createUser(token: string, input: UserAccountInput & { pin: string; password: string }): Promise<{ user: AdminUser }>;
   updateUser(token: string, input: UserAccountInput): Promise<{ user: AdminUser }>;
   resetUserPin(token: string, username: string, pin: string): Promise<{ ok: boolean }>;
+  resetUserPassword(token: string, username: string, password: string): Promise<{ ok: boolean }>;
   deleteUser(token: string, username: string): Promise<{ ok: boolean }>;
 }
 
@@ -55,7 +59,8 @@ function wrap(transport: Transport): ApiClient {
   return {
     mode: transport.kind,
     ping: () => transport.call('ping'),
-    login: (username, pin) => transport.call('login', { username, pin }),
+    login: (username, password) => transport.call('login', { username, password }),
+    loginPin: (challenge, pin) => transport.call('loginPin', { challenge, pin }),
     me: (token) => transport.call('me', {}, token),
     bootstrap: (token) => transport.call('bootstrap', {}, token),
     version: () => transport.version(),
@@ -64,7 +69,7 @@ function wrap(transport: Transport): ApiClient {
     availability: (token, roomId, dateKey) => transport.call('availability', { roomId, dateKey }, token),
     createBooking: (token, input) => announceBookingsChanged(transport.call('createBooking', input, token)),
     cancelBooking: (token, bookingId, reason = '') => announceBookingsChanged(transport.call('cancelBooking', { bookingId, reason }, token)),
-    decideBooking: (token, bookingId, decision, reason = '') => announceBookingsChanged(transport.call('decideBooking', { bookingId, decision, reason }, token)),
+    decideBooking: (token, bookingId, decision, pin, reason = '') => announceBookingsChanged(transport.call('decideBooking', { bookingId, decision, reason, pin }, token)),
     announcements: (token) => transport.call('announcements', {}, token),
     saveAnnouncement: (token, input) => transport.call('saveAnnouncement', input, token),
     archiveAnnouncement: (token, announcementId) => transport.call('archiveAnnouncement', { announcementId }, token),
@@ -72,6 +77,7 @@ function wrap(transport: Transport): ApiClient {
     createUser: (token, input) => transport.call('createUser', input, token),
     updateUser: (token, input) => transport.call('updateUser', input, token),
     resetUserPin: (token, username, pin) => transport.call('resetUserPin', { username, pin }, token),
+    resetUserPassword: (token, username, password) => transport.call('resetUserPassword', { username, password }, token),
     deleteUser: (token, username) => transport.call('deleteUser', { username }, token),
   };
 }

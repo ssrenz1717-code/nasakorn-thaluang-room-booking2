@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { FormPreviewDialog } from '../requestForm/FormPreviewDialog';
 import { useLiveRefresh } from '../../lib/hooks/useLiveRefresh';
 import { Link } from 'react-router-dom';
-import { Check, ClipboardCheck, FileText, Printer, X } from 'lucide-react';
+import { Check, ClipboardCheck, FileText, KeyRound, Printer, X } from 'lucide-react';
 import { APPROVAL_STEPS, currentApprovalStep, isAwaitingRole, stepForRole } from '@shared/domain/approval';
 import { REQUEST_FACILITY_LABEL_TH, type RequestFacility } from '@shared/schemas/booking';
 import { isOpenLocationRoom } from '@shared/schemas/room';
-import { USER_ROLE_LABEL_TH } from '@shared/schemas/user';
+import { PIN_LENGTH, USER_ROLE_LABEL_TH } from '@shared/schemas/user';
+import { Dialog } from '../../components/ui/Dialog';
 import { useApp, useCurrentUser } from '../../app/providers/AppProvider';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Alert } from '../../components/ui/Alert';
@@ -42,6 +43,8 @@ export function ApprovalsPage() {
   const [reason, setReason] = useState('');
   const [busyId, setBusyId] = useState('');
   const [error, setError] = useState('');
+  /** คำขอที่กำลังรอผู้ลงนามใส่ PIN ยืนยัน */
+  const [confirming, setConfirming] = useState<{ booking: DemoBooking; decision: 'approve' | 'reject' } | null>(null);
 
   const load = useCallback(() => Promise.all([api.bookings(token), api.rooms(token)])
     .then(([b, r]) => { setBookings(b.bookings); setRooms(r.rooms); setLoaded(true); })
@@ -61,18 +64,18 @@ export function ApprovalsPage() {
   const mine = isApprover ? pending.filter((booking) => isAwaitingRole(booking, user.role)) : [];
   const others = pending.filter((booking) => !mine.includes(booking));
 
-  const decide = async (booking: DemoBooking, decision: 'approve' | 'reject') => {
+  /** ส่งผลพร้อม PIN — PIN ผิดโยน error กลับให้หน้าต่าง PIN แสดง ไม่ปิดหน้าต่าง */
+  const decide = async (booking: DemoBooking, decision: 'approve' | 'reject', pin: string) => {
     const step = currentApprovalStep(booking);
     setBusyId(booking.bookingId);
     setError('');
     try {
-      await api.decideBooking(token, booking.bookingId, decision, decision === 'reject' ? reason : '');
+      await api.decideBooking(token, booking.bookingId, decision, pin, decision === 'reject' ? reason : '');
       toast.success(decision === 'approve' ? APPROVED_TOAST[step] ?? 'บันทึกแล้ว' : 'บันทึกผลไม่อนุมัติแล้ว แจ้งผู้จองในรายการจองของเขา');
       setReasonId('');
       setReason('');
+      setConfirming(null);
       await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'บันทึกผลการพิจารณาไม่สำเร็จ');
     } finally {
       setBusyId('');
     }
@@ -87,6 +90,16 @@ export function ApprovalsPage() {
     <>
       <PageHeader title="อนุมัติการใช้ห้องประชุม" description={description} />
       {error && <Alert className="mb-4" tone="danger" title="บันทึกไม่สำเร็จ">{error}</Alert>}
+      {confirming !== null && (
+        <PinConfirmDialog
+          title={confirming.booking.title || 'คำขอใช้ห้องประชุม'}
+          action={confirming.decision === 'approve' ? APPROVE_LABEL[myStep] ?? 'อนุมัติ' : 'ไม่อนุมัติ'}
+          danger={confirming.decision === 'reject'}
+          signerName={user.displayName}
+          onClose={() => setConfirming(null)}
+          onConfirm={(pin) => decide(confirming.booking, confirming.decision, pin)}
+        />
+      )}
 
       {isApprover && (
         <section aria-labelledby="mine-title" className="mb-8">
@@ -105,12 +118,12 @@ export function ApprovalsPage() {
                     {reasonId === booking.bookingId ? (
                       <>
                         <Button variant="secondary" onClick={() => { setReasonId(''); setReason(''); }}>กลับ</Button>
-                        <Button variant="danger" loading={busyId === booking.bookingId} disabled={!reason.trim()} icon={<X className="size-4" />} onClick={() => void decide(booking, 'reject')}>ยืนยันไม่อนุมัติ</Button>
+                        <Button variant="danger" loading={busyId === booking.bookingId} disabled={!reason.trim()} icon={<X className="size-4" />} onClick={() => setConfirming({ booking, decision: 'reject' })}>ยืนยันไม่อนุมัติ</Button>
                       </>
                     ) : (
                       <>
                         <Button variant="secondary" disabled={Boolean(busyId)} onClick={() => setReasonId(booking.bookingId)}>ไม่อนุมัติ</Button>
-                        <Button loading={busyId === booking.bookingId} loadingLabel="กำลังบันทึก" disabled={Boolean(busyId)} icon={<Check className="size-4" />} onClick={() => void decide(booking, 'approve')}>
+                        <Button loading={busyId === booking.bookingId} loadingLabel="กำลังบันทึก" disabled={Boolean(busyId)} icon={<Check className="size-4" />} onClick={() => setConfirming({ booking, decision: 'approve' })}>
                           {APPROVE_LABEL[myStep]}
                         </Button>
                       </>
@@ -202,5 +215,64 @@ function Info({ label, children }: { label: string; children: React.ReactNode })
       <dt className="w-20 shrink-0 text-ink-muted">{label}</dt>
       <dd className="min-w-0 text-ink">{children}</dd>
     </div>
+  );
+}
+
+/**
+ * ใส่ PIN ยืนยันการลงนาม — ชื่อผู้ลงนามจะขึ้นในแบบฟอร์มแทนลายเซ็นหลังยืนยัน
+ * PIN ผิดแสดงข้อความในหน้าต่างนี้ ให้ลองใหม่ได้โดยไม่ต้องกดปุ่มอนุมัติซ้ำ
+ */
+function PinConfirmDialog({
+  title, action, danger, signerName, onClose, onConfirm,
+}: {
+  title: string;
+  action: string;
+  danger: boolean;
+  signerName: string;
+  onClose: () => void;
+  onConfirm: (pin: string) => Promise<void>;
+}) {
+  const [pin, setPin] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (pin.length !== PIN_LENGTH) { setError(`กรุณากรอก PIN ให้ครบ ${PIN_LENGTH} หลัก`); return; }
+    setBusy(true);
+    setError('');
+    onConfirm(pin)
+      .catch((cause: unknown) => { setError(cause instanceof Error ? cause.message : 'บันทึกไม่สำเร็จ'); setPin(''); })
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <Dialog
+      labelId="pin-confirm-title"
+      title="ยืนยันการลงนามด้วย PIN"
+      description={`${action} · ${title}`}
+      onClose={onClose}
+      footer={<>
+        <Button variant="secondary" onClick={onClose}>ยกเลิก</Button>
+        <Button type="submit" form="pin-confirm-form" variant={danger ? 'danger' : 'primary'} loading={busy} loadingLabel="กำลังบันทึก">
+          {danger ? 'ยืนยันไม่อนุมัติ' : 'ลงนาม'}
+        </Button>
+      </>}
+    >
+      <form id="pin-confirm-form" onSubmit={submit} noValidate className="space-y-3">
+        <p className="text-sm text-ink-muted">ชื่อ <span className="font-medium text-ink">{signerName}</span> จะขึ้นในแบบฟอร์มคำขอแทนลายเซ็น พร้อมวันที่และเวลาที่ยืนยัน</p>
+        {error && <Alert tone="danger" title="ยืนยันไม่สำเร็จ"><span role="alert">{error}</span></Alert>}
+        <label htmlFor="confirm-pin" className="block text-sm font-medium text-ink">PIN {PIN_LENGTH} หลักของคุณ</label>
+        <div className="relative">
+          <KeyRound aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-5 -translate-y-1/2 text-ink-subtle" />
+          <input
+            id="confirm-pin"
+            className="min-h-12 w-full rounded-control border border-line bg-surface pl-10 pr-3 text-lg tracking-[0.4em] tabular-nums text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+            type="password" inputMode="numeric" pattern="[0-9]*" autoComplete="one-time-code" maxLength={PIN_LENGTH}
+            value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))}
+          />
+        </div>
+      </form>
+    </Dialog>
   );
 }

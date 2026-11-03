@@ -2,7 +2,7 @@
  * สคริปต์ติดตั้ง — รันด้วยมือจาก Apps Script Editor ไม่ใช่ผ่านหน้าเว็บ
  *
  * ลำดับการติดตั้ง:
- *  1. รัน setupSystem() หนึ่งครั้ง — ดู PIN แรกเข้าของบัญชีตั้งต้นใน Execution log
+ *  1. รัน setupSystem() หนึ่งครั้ง — ดูรหัสผ่านและ PIN แรกเข้าของบัญชีตั้งต้นใน Execution log
  *  2. รัน runSelfTest() เพื่อยืนยันว่าทุกอย่างพร้อม
  *  3. Deploy เป็น Web App
  *
@@ -85,9 +85,21 @@ function randomPin_() {
   }
 }
 
+/** รหัสผ่านสุ่ม 10 ตัว (ตัวอักษร + ตัวเลข ตัดตัวที่สับสนอย่าง 0/O, 1/l ออก) */
+function randomPassword_() {
+  const letters = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ';
+  const digits = '23456789';
+  for (;;) {
+    const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid());
+    const pool = letters + digits;
+    const password = bytes.slice(0, 10).map(function (byte) { return pool.charAt((byte + 256) % pool.length); }).join('');
+    if (Domain.passwordProblem(password) === null) return password;
+  }
+}
+
 /**
- * สร้างบัญชีตั้งต้นที่ยังไม่มี (ไม่แตะบัญชีที่มีแล้ว) พร้อม PIN สุ่ม
- * PIN แสดงใน log ครั้งเดียวตอนสร้าง — แจ้งเจ้าของบัญชีแล้วให้ผู้ดูแลรีเซ็ตได้ทุกเมื่อ
+ * สร้างบัญชีตั้งต้นที่ยังไม่มี (ไม่แตะบัญชีที่มีแล้ว) พร้อมรหัสผ่านและ PIN สุ่ม
+ * แสดงใน log ครั้งเดียวตอนสร้าง — แจ้งเจ้าของบัญชีแล้วให้ผู้ดูแลรีเซ็ตได้ทุกเมื่อ
  */
 function seedAccounts() {
   const log = [];
@@ -98,12 +110,13 @@ function seedAccounts() {
       return;
     }
     const pin = randomPin_();
+    const password = randomPassword_();
     appendObject_(Domain.SHEET_USERS, Object.assign({
       username: account.username, displayName: account.displayName, department: account.department,
       role: account.role, status: 'active', allowedRoomIds: '', tokenVersion: 1,
       lastLoginAt: '', createdAt: now, updatedAt: now,
-    }, newPinCredential_(account.username, pin)));
-    log.push(`สร้างบัญชี ${account.username} (${account.displayName}) PIN แรกเข้า: ${pin}`);
+    }, newPinCredential_(account.username, pin), newPasswordCredential_(account.username, password)));
+    log.push(`สร้างบัญชี ${account.username} (${account.displayName}) รหัสผ่าน: ${password}  PIN: ${pin}`);
   });
   return log;
 }

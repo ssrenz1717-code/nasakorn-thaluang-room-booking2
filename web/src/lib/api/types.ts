@@ -18,8 +18,15 @@ export interface SessionUser {
 /** ข้อมูลบัญชีที่ผู้ดูแลเห็นในหน้าจัดการผู้ใช้ (ไม่มี PIN หรือ hash ติดมา) */
 export interface AdminUser extends SessionUser {
   hasPin: boolean;
+  hasPassword: boolean;
   lastLoginAt: string;
   createdAt: string;
+}
+
+/** ผลขั้นที่ 1 (รหัสผ่านถูก) — ตั๋วรอใส่ PIN ใช้ได้ไม่กี่นาที */
+export interface PasswordStepResult {
+  challenge: string;
+  displayName: string;
 }
 
 export interface LoginResult {

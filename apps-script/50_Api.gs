@@ -82,6 +82,9 @@ function apiHandlers_() {
     login: function (payload) {
       return login_(payload || {});
     },
+    loginPin: function (payload) {
+      return loginPin_(payload || {});
+    },
 
     // ต้องล็อกอิน
     me: function (payload, token) {
@@ -112,6 +115,7 @@ function apiHandlers_() {
     createUser: function (payload, token) { return createUser_(requireAdmin_(token), payload || {}); },
     updateUser: function (payload, token) { return updateUser_(requireAdmin_(token), payload || {}); },
     resetUserPin: function (payload, token) { return resetUserPin_(requireAdmin_(token), payload || {}); },
+    resetUserPassword: function (payload, token) { return resetUserPassword_(requireAdmin_(token), payload || {}); },
     deleteUser: function (payload, token) { return deleteUser_(requireAdmin_(token), payload || {}); },
   };
 }

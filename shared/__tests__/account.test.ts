@@ -3,8 +3,11 @@ import {
   canUseRoom,
   constantTimeEqual,
   lastAdminProblem,
+  passwordProblem,
   pinProblem,
   validateLoginInput,
+  validatePinStepInput,
+  validateResetPasswordInput,
   validateResetPinInput,
   validateUserAccountInput,
 } from '../schemas/user';
@@ -24,8 +27,18 @@ describe('PIN', () => {
   });
 });
 
+describe('รหัสผ่าน', () => {
+  it('ต้องยาว 8 ตัวขึ้นไป มีทั้งตัวอักษรและตัวเลข ไม่มีช่องว่าง', () => {
+    expect(passwordProblem('Thaluang2026')).toBeNull();
+    expect(passwordProblem('abc123')).not.toBeNull();
+    expect(passwordProblem('abcdefgh')).not.toBeNull();
+    expect(passwordProblem('12345678')).not.toBeNull();
+    expect(passwordProblem('abcd 1234')).not.toBeNull();
+  });
+});
+
 describe('ฟอร์มบัญชีผู้ใช้', () => {
-  const base = { username: ' Shoyu ', displayName: 'shoyu', role: 'admin', pin: '240617' };
+  const base = { username: ' Shoyu ', displayName: 'shoyu', role: 'admin', pin: '240617', password: 'Thaluang2026' };
 
   it('ทำชื่อผู้ใช้เป็นตัวเล็กและตัดช่องว่าง', () => {
     const result = validateUserAccountInput(base, { requirePin: true });
@@ -36,9 +49,10 @@ describe('ฟอร์มบัญชีผู้ใช้', () => {
     expect(validateUserAccountInput({ ...base, username: 'ชื่อไทย' }, { requirePin: true }).ok).toBe(false);
     expect(validateUserAccountInput({ ...base, username: 'a|b|c' }, { requirePin: true }).ok).toBe(false);
   });
-  it('สร้างใหม่ต้องมี PIN แต่แก้ไขไม่ต้อง', () => {
+  it('สร้างใหม่ต้องมีทั้งรหัสผ่านและ PIN แต่แก้ไขไม่ต้อง', () => {
     expect(validateUserAccountInput({ ...base, pin: '' }, { requirePin: true }).ok).toBe(false);
-    expect(validateUserAccountInput({ ...base, pin: '' }, { requirePin: false }).ok).toBe(true);
+    expect(validateUserAccountInput({ ...base, password: '' }, { requirePin: true }).ok).toBe(false);
+    expect(validateUserAccountInput({ ...base, pin: '', password: '' }, { requirePin: false }).ok).toBe(true);
   });
   it('สิทธิ์ที่ไม่มีอยู่จริงไม่ผ่าน', () => {
     expect(validateUserAccountInput({ ...base, role: 'superadmin' }, { requirePin: true }).ok).toBe(false);
@@ -48,8 +62,12 @@ describe('ฟอร์มบัญชีผู้ใช้', () => {
     expect(ok.ok && ok.value.allowedRoomIds).toEqual(['R01', 'R02']);
     expect(validateUserAccountInput({ ...base, allowedRoomIds: [1] }, { requirePin: true }).ok).toBe(false);
   });
-  it('เข้าสู่ระบบ/รีเซ็ต PIN ตรวจช่องว่างและ PIN ใหม่', () => {
-    expect(validateLoginInput({ username: '', pin: '' }).ok).toBe(false);
+  it('เข้าสู่ระบบ/รีเซ็ต ตรวจช่องว่างและค่าใหม่', () => {
+    expect(validateLoginInput({ username: '', password: '' }).ok).toBe(false);
+    expect(validateLoginInput({ username: 'shoyu', password: 'x' }).ok).toBe(true);
+    expect(validatePinStepInput({ challenge: '', pin: '240617' }).ok).toBe(false);
+    expect(validateResetPasswordInput({ username: 'abc', password: 'short1' }).ok).toBe(false);
+    expect(validateResetPasswordInput({ username: 'abc', password: 'longenough1' }).ok).toBe(true);
     expect(validateResetPinInput({ username: 'a', pin: '111111' }).ok).toBe(false);
     expect(validateResetPinInput({ username: 'abc', pin: '240617' }).ok).toBe(true);
   });

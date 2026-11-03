@@ -60,9 +60,11 @@ export const SHEET_SPECS: SheetSpec[] = [
       'status',
       // รหัสห้องคั่นด้วยจุลภาค — ว่าง = จองได้ทุกห้อง
       'allowedRoomIds',
-      // ไม่เก็บ PIN จริง: HMAC-SHA256(PIN_PEPPER, username|salt|pin) เป็น base64
+      // ไม่เก็บรหัสผ่าน/PIN จริง: HMAC-SHA256(PIN_PEPPER, ชนิด|username|salt|ค่า) เป็น base64
       'pinHash',
       'pinSalt',
+      'passwordHash',
+      'passwordSalt',
       'tokenVersion',
       'lastLoginAt',
       'createdAt',

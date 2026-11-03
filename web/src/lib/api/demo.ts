@@ -24,8 +24,10 @@ import { COLLEGE_ROOMS, OPEN_LOCATION_ROOM_CODE, isOpenLocationRoom } from '@sha
 import { validateDecideBookingInput } from '@shared/schemas/booking';
 import {
   COLLEGE_ACCOUNTS, PIN_LOCK_MINUTES, PIN_MAX_FAILURES, canUseRoom, constantTimeEqual, lastAdminProblem,
-  normalizeUsername, pinDigestMessage, validateLoginInput, validateResetPinInput, validateUserAccountInput,
+  normalizeUsername, passwordDigestMessage, pinDigestMessage, validateLoginInput, validatePinStepInput,
+  validateResetPasswordInput, validateResetPinInput, validateUserAccountInput,
 } from '@shared/schemas/user';
+import { PIN_CHALLENGE_TTL_MS } from '@shared/auth/session';
 
 export interface DemoRoom {
   roomId: string;
@@ -72,6 +74,8 @@ export interface DemoBooking {
 interface DemoUser extends SessionUser {
   pinHash: string;
   pinSalt: string;
+  passwordHash: string;
+  passwordSalt: string;
   tokenVersion: number;
   lastLoginAt: string;
   createdAt: string;
@@ -87,26 +91,43 @@ interface DemoState {
 }
 
 /**
- * บัญชีทดลอง + PIN — ใช้เฉพาะโหมดข้อมูลในเบราว์เซอร์ (ข้อมูลอยู่ในเครื่องผู้เปิดเว็บเท่านั้น)
- * ระบบจริงบน Apps Script สุ่ม PIN ให้ตอนติดตั้ง ไม่มี PIN ชุดนี้
+ * บัญชีทดลอง + รหัสผ่าน + PIN — ใช้เฉพาะโหมดข้อมูลในเบราว์เซอร์ (ข้อมูลอยู่ในเครื่องผู้เปิดเว็บเท่านั้น)
+ * ระบบจริงบน Apps Script สุ่มรหัสผ่านและ PIN ให้ตอนติดตั้ง ไม่มีชุดนี้
  */
-export const DEMO_LOGINS: readonly { username: string; pin: string; displayName: string; role: SessionUser['role'] }[] = [
-  ...COLLEGE_ACCOUNTS.map((account, index) => ({ ...account, pin: ['135790', '246801', '246802', '246803'][index] ?? '246809' })),
-  { username: 'teacher', pin: '246804', displayName: 'ครูทดลอง ใจดี', role: 'staff' },
+const DEMO_SECRETS: Record<string, { password: string; pin: string }> = {
+  shoyu: { password: 'Shoyu2026', pin: '135790' },
+  watcharapong: { password: 'Inspect2026', pin: '246801' },
+  ekkarat: { password: 'Endorse2026', pin: '246802' },
+  chatree: { password: 'Approve2026', pin: '246803' },
+  teacher: { password: 'Teacher2026', pin: '246804' },
+};
+
+export const DEMO_LOGINS: readonly { username: string; password: string; pin: string; displayName: string; role: SessionUser['role'] }[] = [
+  ...COLLEGE_ACCOUNTS.map((account) => ({ ...account, ...DEMO_SECRETS[account.username]! })),
+  { username: 'teacher', displayName: 'ครูทดลอง ใจดี', role: 'staff', ...DEMO_SECRETS.teacher! },
 ];
 
 const DEMO_PEPPER = 'demo-local-pepper';
 
-async function demoPinHash(username: string, salt: string, pin: string): Promise<string> {
+async function demoHmac(message: string): Promise<string> {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey('raw', encoder.encode(DEMO_PEPPER), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(pinDigestMessage(username, salt, pin)));
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(message));
   return btoa(String.fromCharCode(...new Uint8Array(signature)));
 }
 
+const demoPinHash = (username: string, salt: string, pin: string) => demoHmac(pinDigestMessage(username, salt, pin));
+const demoPasswordHash = (username: string, salt: string, password: string) => demoHmac(passwordDigestMessage(username, salt, password));
+const newSalt = () => crypto.randomUUID().replaceAll('-', '');
+
 async function demoCredential(username: string, pin: string): Promise<{ pinHash: string; pinSalt: string }> {
-  const pinSalt = crypto.randomUUID().replaceAll('-', '');
+  const pinSalt = newSalt();
   return { pinSalt, pinHash: await demoPinHash(username, pinSalt, pin) };
+}
+
+async function demoPasswordCredential(username: string, password: string): Promise<{ passwordHash: string; passwordSalt: string }> {
+  const passwordSalt = newSalt();
+  return { passwordSalt, passwordHash: await demoPasswordHash(username, passwordSalt, password) };
 }
 
 async function seedUsers(): Promise<DemoUser[]> {
@@ -117,6 +138,7 @@ async function seedUsers(): Promise<DemoUser[]> {
       email: login.username, displayName: login.displayName, department: account?.department ?? 'แผนกวิชาการบัญชี',
       role: login.role, status: 'active' as const, allowedRoomIds: [],
       tokenVersion: 1, lastLoginAt: '', createdAt: now, ...(await demoCredential(login.username, login.pin)),
+      ...(await demoPasswordCredential(login.username, login.password)),
     };
   }));
 }
@@ -127,7 +149,7 @@ function sessionView(user: DemoUser): SessionUser {
 }
 
 function adminView(user: DemoUser): AdminUser {
-  return { ...sessionView(user), hasPin: user.pinHash !== '', lastLoginAt: user.lastLoginAt, createdAt: user.createdAt };
+  return { ...sessionView(user), hasPin: user.pinHash !== '', hasPassword: user.passwordHash !== '', lastLoginAt: user.lastLoginAt, createdAt: user.createdAt };
 }
 
 const DEMO_APPROVERS = COLLEGE_ACCOUNTS.filter((account) => account.role !== 'admin');
@@ -230,8 +252,8 @@ function seedBookings(): DemoBooking[] {
  * (แต่ละคนเห็นข้อมูลของตัวเอง) แต่อย่างน้อยรีเฟรชหน้าแล้วการจองไม่หาย
  * เก็บเฉพาะการจอง ไม่เก็บค่าตั้งค่า เพื่อให้แก้ค่าเริ่มต้นในโค้ดแล้วมีผลทันที
  */
-// v3: เปลี่ยนเป็นบัญชีชื่อผู้ใช้ + PIN — การจองชุดเก่าอ้างบัญชีอีเมลที่ไม่มีแล้วจึงไม่อ่านต่อ
-const LOCAL_STORAGE_KEY = 'mrb.local-bookings.v3';
+// v4: บัญชีมีรหัสผ่าน + PIN — บัญชีชุด v3 ไม่มีรหัสผ่านจึงไม่อ่านต่อ
+const LOCAL_STORAGE_KEY = 'mrb.local-bookings.v4';
 
 async function loadState(): Promise<DemoState> {
   const state = createState(await seedUsers());
@@ -272,8 +294,27 @@ const DEMO_TOKEN_PREFIX = 'demo-token:';
 export function createDemoTransport(): Transport {
   const ready = loadState();
   let state!: DemoState;
-  /** PIN ผิดติดกันรายบัญชี — เหมือนตัวนับใน CacheService ของ Apps Script */
-  const pinFailures = new Map<string, { count: number; until: number }>();
+  /** รหัสผ่าน/PIN ผิดติดกันรายบัญชี — เหมือนตัวนับใน CacheService ของ Apps Script */
+  const failures = new Map<string, { count: number; until: number }>();
+  /** ตั๋วรอ PIN ที่ออกไปแล้ว (ขั้นที่ 1 ผ่าน) */
+  const challenges = new Map<string, { username: string; tokenVersion: number; expiresAt: number }>();
+
+  function assertNotLocked(username: string): void {
+    const failure = failures.get(username);
+    if (failure && failure.until > Date.now() && failure.count >= PIN_MAX_FAILURES) {
+      throw new ApiError('BUSY', `ใส่รหัสผิดหลายครั้ง บัญชีนี้ถูกล็อกชั่วคราว ${PIN_LOCK_MINUTES} นาที หรือให้ผู้ดูแลรีเซ็ตให้`);
+    }
+  }
+
+  function recordFailure(username: string): void {
+    const failure = failures.get(username);
+    const count = failure && failure.until > Date.now() ? failure.count + 1 : 1;
+    failures.set(username, { count, until: Date.now() + PIN_LOCK_MINUTES * 60_000 });
+  }
+
+  async function pinMatches(user: DemoUser, pin: string): Promise<boolean> {
+    return user.pinHash !== '' && constantTimeEqual(await demoPinHash(user.email, user.pinSalt, pin.trim()), user.pinHash);
+  }
 
   // token ผูก tokenVersion ไว้ รีเซ็ต PIN แล้ว token เดิมใช้ไม่ได้ทันทีเหมือนระบบจริง
   function userFromToken(token: string): DemoUser {
@@ -308,22 +349,40 @@ export function createDemoTransport(): Transport {
 
     login: async (payload: unknown) => {
       const parsed = validateLoginInput(payload);
-      if (!parsed.ok) throw new ApiError('VALIDATION', 'กรุณากรอกชื่อผู้ใช้และ PIN', parsed.issues);
-      const { username, pin } = parsed.value;
-      const failure = pinFailures.get(username);
-      if (failure && failure.until > Date.now() && failure.count >= PIN_MAX_FAILURES) {
-        throw new ApiError('BUSY', `ใส่ PIN ผิดหลายครั้ง บัญชีนี้ถูกล็อกชั่วคราว ${PIN_LOCK_MINUTES} นาที หรือให้ผู้ดูแลรีเซ็ต PIN`);
-      }
+      if (!parsed.ok) throw new ApiError('VALIDATION', 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน', parsed.issues);
+      const { username, password } = parsed.value;
+      assertNotLocked(username);
       const user = state.users.find((candidate) => candidate.email === username);
-      const ok = user !== undefined && user.pinHash !== '' &&
-        constantTimeEqual(await demoPinHash(username, user.pinSalt, pin), user.pinHash);
+      const ok = user !== undefined && user.passwordHash !== '' &&
+        constantTimeEqual(await demoPasswordHash(username, user.passwordSalt, password), user.passwordHash);
       if (!ok || user === undefined) {
-        const count = failure && failure.until > Date.now() ? failure.count + 1 : 1;
-        pinFailures.set(username, { count, until: Date.now() + PIN_LOCK_MINUTES * 60_000 });
-        throw new ApiError('UNAUTHENTICATED', 'ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง');
+        recordFailure(username);
+        throw new ApiError('UNAUTHENTICATED', 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
       }
       if (user.status !== 'active') throw new ApiError('FORBIDDEN', 'บัญชีนี้ถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
-      pinFailures.delete(username);
+      const challenge = `demo-challenge:${newSalt()}`;
+      challenges.set(challenge, { username, tokenVersion: user.tokenVersion, expiresAt: Date.now() + PIN_CHALLENGE_TTL_MS });
+      return { challenge, displayName: user.displayName };
+    },
+
+    loginPin: async (payload: unknown) => {
+      const parsed = validatePinStepInput(payload);
+      if (!parsed.ok) throw new ApiError('VALIDATION', 'กรุณากรอก PIN', parsed.issues);
+      const ticket = challenges.get(parsed.value.challenge);
+      if (!ticket || ticket.expiresAt <= Date.now()) {
+        throw new ApiError('UNAUTHENTICATED', 'หมดเวลายืนยัน PIN กรุณาเข้าสู่ระบบด้วยรหัสผ่านอีกครั้ง');
+      }
+      assertNotLocked(ticket.username);
+      const user = state.users.find((candidate) => candidate.email === ticket.username);
+      if (!user || user.status !== 'active' || user.tokenVersion !== ticket.tokenVersion) {
+        throw new ApiError('UNAUTHENTICATED', 'กรุณาเข้าสู่ระบบด้วยรหัสผ่านอีกครั้ง');
+      }
+      if (!(await pinMatches(user, parsed.value.pin))) {
+        recordFailure(user.email);
+        throw new ApiError('UNAUTHENTICATED', 'PIN ไม่ถูกต้อง');
+      }
+      challenges.delete(parsed.value.challenge);
+      failures.delete(user.email);
       user.lastLoginAt = new Date().toISOString();
       saveState(state);
       return { token: `${DEMO_TOKEN_PREFIX}${user.email}:${user.tokenVersion}`, user: sessionView(user) };
@@ -345,6 +404,7 @@ export function createDemoTransport(): Transport {
         email: input.username, displayName: input.displayName, department: input.department, role: input.role,
         status: input.status, allowedRoomIds: input.allowedRoomIds, tokenVersion: 1, lastLoginAt: '',
         createdAt: new Date().toISOString(), ...(await demoCredential(input.username, input.pin)),
+        ...(await demoPasswordCredential(input.username, input.password)),
       };
       state.users.push(user); changed();
       return { user: adminView(user) };
@@ -376,7 +436,19 @@ export function createDemoTransport(): Transport {
       if (!user) throw new ApiError('NOT_FOUND', 'ไม่พบผู้ใช้');
       Object.assign(user, await demoCredential(user.email, parsed.value.pin));
       user.tokenVersion += 1;
-      pinFailures.delete(user.email);
+      failures.delete(user.email);
+      changed();
+      return { ok: true };
+    },
+    resetUserPassword: async (payload: unknown, token) => {
+      requireAdmin(token);
+      const parsed = validateResetPasswordInput(payload);
+      if (!parsed.ok) throw new ApiError('VALIDATION', issues(parsed), parsed.issues);
+      const user = state.users.find((item) => item.email === parsed.value.username);
+      if (!user) throw new ApiError('NOT_FOUND', 'ไม่พบผู้ใช้');
+      Object.assign(user, await demoPasswordCredential(user.email, parsed.value.password));
+      user.tokenVersion += 1;
+      failures.delete(user.email);
       changed();
       return { ok: true };
     },
@@ -452,8 +524,15 @@ export function createDemoTransport(): Transport {
       booking.status = 'cancelled'; booking.note = payload.reason || booking.note; state.dataVersion += 1; saveState(state);
       return { booking };
     },
-    decideBooking: (payload: unknown, token) => {
+    decideBooking: async (payload: { pin?: unknown }, token) => {
       const user = userFromToken(token);
+      // PIN แทนลายเซ็น — ผิดนับรวมกับตัวนับล็อกบัญชีเหมือนตอนเข้าสู่ระบบ
+      assertNotLocked(user.email);
+      if (!(await pinMatches(user, typeof payload?.pin === 'string' ? payload.pin : ''))) {
+        recordFailure(user.email);
+        throw new ApiError('VALIDATION', 'PIN ไม่ถูกต้อง');
+      }
+      failures.delete(user.email);
       const parsed = validateDecideBookingInput(payload);
       if (!parsed.ok) throw new ApiError('VALIDATION', 'ข้อมูลการพิจารณาไม่ถูกต้อง', parsed.issues);
       const booking = state.bookings.find((item) => item.bookingId === parsed.value.bookingId);

@@ -2,10 +2,11 @@
  * การยืนยันตัวตนและสิทธิ์
  *
  * ขั้นตอน:
- *  1. ผู้ใช้กรอกชื่อผู้ใช้ + PIN 6 หลัก (ผู้ดูแลสร้างบัญชีและตั้ง PIN ให้ในหน้าจัดการผู้ใช้)
- *  2. เทียบ HMAC ของ PIN กับค่าในชีต Users — ชีตไม่มี PIN จริงเก็บอยู่
- *  3. ผิดติดกัน PIN_MAX_FAILURES ครั้ง บัญชีนั้นล็อก PIN_LOCK_MINUTES นาที
- *  4. ออก session token ของเราเองกลับไป (อายุ 12 ชม.) ใช้ในคำขอต่อ ๆ ไป
+ *  1. ผู้ใช้กรอกชื่อผู้ใช้ + รหัสผ่าน -> ถูกต้องได้ "ตั๋วรอ PIN" อายุ 5 นาที (ยังไม่ใช่ session)
+ *  2. หน้าถัดไปกรอก PIN 6 หลัก พร้อมตั๋ว -> ถูกต้องจึงออก session token (อายุ 12 ชม.)
+ *  3. ชีต Users เก็บแค่ HMAC ของรหัสผ่านและ PIN ไม่มีค่าจริง
+ *  4. ผิดติดกัน PIN_MAX_FAILURES ครั้ง (รหัสผ่านหรือ PIN รวมกัน) บัญชีนั้นล็อก PIN_LOCK_MINUTES นาที
+ *  ผู้ลงนามต้องใส่ PIN อีกครั้งทุกครั้งที่กดอนุมัติ/ไม่อนุมัติ (verifyActorPin_)
  *
  * กฎเหล็ก: ทุกฟังก์ชันที่แก้ข้อมูลต้องเรียก authenticate_() แล้วใช้ "สิทธิ์จากชีต"
  * ไม่ใช่สิทธิ์ที่ติดมาใน token และไม่ใช่สิทธิ์ที่หน้าเว็บส่งมาบอก
@@ -66,6 +67,29 @@ function newPinCredential_(username, pin) {
   return { pinSalt: salt, pinHash: pinHash_(username, salt, pin) };
 }
 
+function passwordHash_(username, salt, password) {
+  return hmacBase64_(Domain.passwordDigestMessage(username, salt, password), pinPepper_());
+}
+
+function newPasswordCredential_(username, password) {
+  const salt = Utilities.getUuid().replace(/-/g, '');
+  return { passwordSalt: salt, passwordHash: passwordHash_(username, salt, password) };
+}
+
+function pinMatches_(row, pin) {
+  const hash = row === null ? '' : String(row.pinHash || '');
+  return hash !== '' && Domain.constantTimeEqual(pinHash_(String(row.username), String(row.pinSalt || ''), pin), hash);
+}
+
+function assertNotLocked_(username) {
+  if (pinFailures_(username) >= Domain.PIN_MAX_FAILURES) {
+    throw appError_(
+      ERROR_CODES.BUSY,
+      `ใส่รหัสผิดหลายครั้ง บัญชีนี้ถูกล็อกชั่วคราว ${Domain.PIN_LOCK_MINUTES} นาที หรือให้ผู้ดูแลรีเซ็ตให้`,
+    );
+  }
+}
+
 function pinFailureKey_(username) {
   return `pin_fail_${Utilities.base64EncodeWebSafe(username)}`;
 }
@@ -86,29 +110,58 @@ function recordPinFailure_(username) {
   recordLoginFailure_();
 }
 
-/** เข้าสู่ระบบด้วยชื่อผู้ใช้ + PIN — ข้อความผิดพลาดเหมือนกันทั้งชื่อผิดและ PIN ผิด */
+/** ขั้นที่ 1: ชื่อผู้ใช้ + รหัสผ่าน -> ตั๋วรอ PIN (ข้อความผิดพลาดเหมือนกันทั้งชื่อผิดและรหัสผิด) */
 function login_(raw) {
   const parsed = Domain.validateLoginInput(raw);
-  if (!parsed.ok) throw appError_(ERROR_CODES.VALIDATION, 'กรุณากรอกชื่อผู้ใช้และ PIN', parsed.issues);
+  if (!parsed.ok) throw appError_(ERROR_CODES.VALIDATION, 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน', parsed.issues);
   const username = parsed.value.username;
-
   assertLoginAllowed_();
-  if (pinFailures_(username) >= Domain.PIN_MAX_FAILURES) {
-    throw appError_(
-      ERROR_CODES.BUSY,
-      `ใส่ PIN ผิดหลายครั้ง บัญชีนี้ถูกล็อกชั่วคราว ${Domain.PIN_LOCK_MINUTES} นาที หรือให้ผู้ดูแลรีเซ็ต PIN`,
-    );
-  }
+  assertNotLocked_(username);
 
   const user = findByKey_(Domain.SHEET_USERS, username);
-  const hash = user === null ? '' : String(user.pinHash || '');
-  const ok = hash !== '' && Domain.constantTimeEqual(pinHash_(username, String(user.pinSalt || ''), parsed.value.pin), hash);
+  const hash = user === null ? '' : String(user.passwordHash || '');
+  const ok = hash !== '' &&
+    Domain.constantTimeEqual(passwordHash_(username, String(user.passwordSalt || ''), parsed.value.password), hash);
   if (!ok) {
     recordPinFailure_(username);
-    throw appError_(ERROR_CODES.UNAUTHENTICATED, 'ชื่อผู้ใช้หรือ PIN ไม่ถูกต้อง');
+    throw appError_(ERROR_CODES.UNAUTHENTICATED, 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
   }
   if (String(user.status) !== 'active') {
     throw appError_(ERROR_CODES.FORBIDDEN, 'บัญชีนี้ถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแลระบบ');
+  }
+
+  const challenge = Domain.createPinChallenge(
+    {
+      username: username,
+      tokenVersion: Number(user.tokenVersion) || 1,
+      expiresAt: serverNow_().getTime() + Domain.PIN_CHALLENGE_TTL_MS,
+    },
+    sessionSecret_(),
+    hmacBase64_,
+  );
+  return { challenge: challenge, displayName: String(user.displayName || username) };
+}
+
+/** ขั้นที่ 2: ตั๋วรอ PIN + PIN -> session token */
+function loginPin_(raw) {
+  const parsed = Domain.validatePinStepInput(raw);
+  if (!parsed.ok) throw appError_(ERROR_CODES.VALIDATION, 'กรุณากรอก PIN', parsed.issues);
+  const ticket = Domain.verifyPinChallenge(parsed.value.challenge, sessionSecret_(), hmacBase64_, serverNow_().getTime());
+  if (!ticket.ok) {
+    throw appError_(ERROR_CODES.UNAUTHENTICATED, 'หมดเวลายืนยัน PIN กรุณาเข้าสู่ระบบด้วยรหัสผ่านอีกครั้ง');
+  }
+  const username = ticket.username;
+  assertLoginAllowed_();
+  assertNotLocked_(username);
+
+  const user = findByKey_(Domain.SHEET_USERS, username);
+  // รีเซ็ตรหัส/ปิดบัญชีระหว่างรอ PIN -> ตั๋วใบเดิมใช้ไม่ได้
+  if (user === null || String(user.status) !== 'active' || (Number(user.tokenVersion) || 1) !== ticket.tokenVersion) {
+    throw appError_(ERROR_CODES.UNAUTHENTICATED, 'กรุณาเข้าสู่ระบบด้วยรหัสผ่านอีกครั้ง');
+  }
+  if (!pinMatches_(user, parsed.value.pin)) {
+    recordPinFailure_(username);
+    throw appError_(ERROR_CODES.UNAUTHENTICATED, 'PIN ไม่ถูกต้อง');
   }
 
   CacheService.getScriptCache().remove(pinFailureKey_(username));
@@ -127,6 +180,16 @@ function login_(raw) {
     hmacBase64_,
   );
   return { token: token, user: publicUser_(user) };
+}
+
+/** ผู้ลงนามยืนยันตัวตนด้วย PIN ก่อนอนุมัติ/ไม่อนุมัติ — ผิดนับรวมกับตัวนับล็อกบัญชี */
+function verifyActorPin_(user, pin) {
+  assertNotLocked_(user.email);
+  if (!pinMatches_(findByKey_(Domain.SHEET_USERS, user.email), typeof pin === 'string' ? pin.trim() : '')) {
+    recordPinFailure_(user.email);
+    throw appError_(ERROR_CODES.VALIDATION, 'PIN ไม่ถูกต้อง');
+  }
+  CacheService.getScriptCache().remove(pinFailureKey_(user.email));
 }
 
 /** มีผู้ดูแลที่ใช้งานได้อยู่ในระบบแล้วหรือยัง */

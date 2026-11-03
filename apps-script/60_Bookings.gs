@@ -151,6 +151,8 @@ function decideBooking_(user, raw) {
   const parsed = Domain.validateDecideBookingInput(raw);
   if (!parsed.ok) throw appError_(ERROR_CODES.VALIDATION, 'ข้อมูลการพิจารณาไม่ถูกต้อง', parsed.issues);
   const input = parsed.value;
+  // PIN แทนลายเซ็น: ตรวจนอกล็อก เพราะไม่ได้เขียนข้อมูลการจอง
+  verifyActorPin_(user, raw && raw.pin);
   return withScriptLock_(function () {
     const row = findByKey_(Domain.SHEET_BOOKINGS, input.bookingId);
     if (!row) throw appError_(ERROR_CODES.NOT_FOUND, 'ไม่พบรายการจอง');
