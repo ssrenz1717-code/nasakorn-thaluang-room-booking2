@@ -157,7 +157,7 @@ describe('เมนูและการเข้าถึงหน้าต่�
       expect(within(nav).queryByText(label)).toBeNull();
     }
     // จัดการผู้ใช้ทำเสร็จแล้ว ผู้ดูแลต้องเห็นเมนูนี้
-    expect(within(nav).getAllByText('จัดการผู้ใช้').length).toBeGreaterThan(0);
+    expect(within(nav).getByRole('link', { name: 'จัดการผู้ใช้' })).toBeDefined();
     // ช่องค้นหาและกระดิ่งเคยเป็นปุ่มที่กดไม่ได้ ต้องไม่กลับมาอีก
     expect(screen.queryByRole('searchbox')).toBeNull();
     expect(screen.queryByRole('button', { name: /การแจ้งเตือน/ })).toBeNull();
@@ -239,10 +239,9 @@ describe('สิทธิ์ผู้ใช้', () => {
 
   it('พนักงานไม่เห็นเมนูของผู้ดูแลระบบ', async () => {
     const { nav } = await openApp('teacher');
-    expect(within(nav).queryByText('จัดการผู้ใช้')).toBeNull();
-    expect(within(nav).queryByText('ตั้งค่าระบบ')).toBeNull();
-    expect(within(nav).queryByText('รออนุมัติ')).toBeNull();
-    expect(within(nav).getByText('จองห้องประชุม')).toBeDefined();
+    expect(within(nav).queryByRole('link', { name: 'จัดการผู้ใช้' })).toBeNull();
+    expect(within(nav).queryByRole('link', { name: /อนุมัติ/ })).toBeNull();
+    expect(within(nav).getByRole('link', { name: 'จองห้องประชุม' })).toBeDefined();
   });
 
   it('ผู้ดูแลเพิ่มผู้ใช้ที่จองได้ห้องเดียว แล้วคนนั้นเข้าระบบด้วย PIN ที่ได้และเห็นแค่ห้องนั้น', async () => {
@@ -355,13 +354,15 @@ describe('จองห้องจริงตั้งแต่ต้นจน�
   }, 15_000);
 });
 
-describe('เมนูซ้าย: ย่อได้ และมีป้ายแจ้งรายการรออนุมัติ', () => {
-  const sidebarPanel = () => document.querySelector('aside [data-expanded]') as HTMLElement;
+describe('เมนูแถบบน: หุบ/กางได้ และมีป้ายแจ้งรายการรออนุมัติ', () => {
+  const sidebarPanel = () => document.querySelector('nav[data-expanded]') as HTMLElement;
 
-  it('เปิดเว็บมาเมนูหุบไว้ก่อน แต่ยังกดเมนูได้', async () => {
+  it('เมนูอยู่แถบบน ไม่มีเมนูซ้าย เปิดมาหุบไว้ก่อน แต่ยังกดเมนูได้', async () => {
     await openApp();
 
     expect(sidebarPanel().dataset.expanded).toBe('false');
+    expect(sidebarPanel().closest('header')).not.toBeNull();
+    expect(document.querySelector('aside')).toBeNull();
     // ชื่อเมนูซ่อนจากสายตา แต่ลิงก์ยังมีชื่อให้โปรแกรมอ่านหน้าจอและกดได้
     const nav = screen.getByRole('navigation', { name: 'เมนูหลัก' });
     expect(within(nav).getByRole('link', { name: 'ห้องประชุม' })).toBeDefined();

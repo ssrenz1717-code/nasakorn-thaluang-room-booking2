@@ -5,8 +5,10 @@ import { USER_ROLE_LABEL_TH } from '@shared/schemas/user';
 import { cn } from '../../lib/cn';
 import { useApp } from '../../app/providers/AppProvider';
 import { ConnectionSettingsDialog } from './ConnectionSettingsDialog';
+import { TopNav } from './TopNav';
 
-export function Topbar() {
+/** แถบบน: โลโก้/ปุ่มปักเมนู + เมนูหลัก (จอใหญ่) + ตั้งค่าและโปรไฟล์ */
+export function Topbar({ badges = {} }: { badges?: Record<string, number> }) {
   const { user, signOut } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -37,8 +39,9 @@ export function Topbar() {
 
   return (
     <header className="sticky top-0 z-[20] border-b border-line bg-surface/95 backdrop-blur">
-      <div className="flex min-h-14 items-center gap-3 px-4 pt-[env(safe-area-inset-top)] lg:min-h-16 lg:px-6">
-        {/* มือถือไม่มีเมนูซ้าย จึงแสดงชื่อแอปไว้ด้านบนให้รู้ว่าอยู่ที่ไหน */}
+      <div className="mx-auto flex min-h-14 max-w-[90rem] items-center gap-3 px-4 pt-[env(safe-area-inset-top)] lg:min-h-[4.25rem] lg:px-6">
+        {user !== null && <TopNav role={user.role} badges={badges} />}
+        {/* มือถือไม่มีเมนูบน จึงแสดงชื่อแอปไว้ด้านบนให้รู้ว่าอยู่ที่ไหน */}
         <div className="flex min-w-0 items-center gap-2.5 lg:hidden">
           <span
             aria-hidden="true"
@@ -52,7 +55,7 @@ export function Topbar() {
           </span>
         </div>
 
-        <div className="flex-1" />
+        <div className="flex-1 lg:hidden" />
 
         {user?.role === 'admin' && (
           <button
@@ -84,7 +87,7 @@ export function Topbar() {
             >
               {initial}
             </span>
-            <span className="hidden text-left sm:block">
+            <span className="hidden text-left sm:block lg:hidden xl:block">
               <span className="block max-w-[12rem] truncate text-sm font-medium text-ink">
                 {user?.displayName ?? '—'}
               </span>
