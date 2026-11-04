@@ -97,16 +97,15 @@ export function DashboardPage() {
 
   return (
     <>
-      <section className="enter relative mb-4 overflow-hidden rounded-[20px] bg-brand-gradient px-5 py-5 text-ink-inverse shadow-raised sm:mb-6 sm:px-8 sm:py-7">
+      <section className="enter relative mb-4 overflow-hidden rounded-[20px] bg-brand-gradient px-5 py-4 text-ink-inverse shadow-raised sm:mb-5 sm:px-7 sm:py-5">
         {/* วงกลมตกแต่งด้านหลัง — ไม่มีความหมาย ซ่อนจากโปรแกรมอ่านหน้าจอ */}
         <span aria-hidden="true" className="absolute -right-12 -top-20 size-64 rounded-full bg-white/10" />
         <span aria-hidden="true" className="absolute -bottom-24 right-28 size-48 rounded-full bg-cyan-300/20" />
         <span aria-hidden="true" className="absolute -left-10 -bottom-16 size-40 rounded-full bg-sky-300/15" />
-        <div className="relative flex flex-wrap items-end justify-between gap-5">
+        <div className="relative flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold sm:text-3xl">ระบบจองห้องประชุมออนไลน์</h1>
-            <p className="mt-1 text-sm text-white/85 sm:mt-1.5 sm:text-[15px]">{formatFullDate(today)}</p>
-            <p className="text-sm text-white/85 sm:text-[15px]">วันนี้มีการใช้ห้อง {todayCount} รายการ</p>
+            <h1 className="text-xl font-semibold sm:text-2xl">ระบบจองห้องประชุมออนไลน์</h1>
+            <p className="mt-1 text-sm text-white/85 sm:text-[15px]">{formatFullDate(today)}<span className="hidden sm:inline"> · </span><br className="sm:hidden" />วันนี้มีการใช้ห้อง {todayCount} รายการ</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {!isDemo && (
@@ -143,8 +142,6 @@ export function DashboardPage() {
         </Alert>
       )}
 
-      <AnnouncementsPanel refreshKey={refreshKey} />
-
       <section aria-label="สรุปการจอง" className="enter-stagger mb-4 grid grid-cols-2 gap-3 sm:mb-5 sm:gap-4 xl:grid-cols-4">
         <SummaryCard icon={<CalendarClock className="size-5"/>} label="ใช้ห้องวันนี้" value={todayCount} caption="รายการ" tone="blue"/>
         <SummaryCard icon={<Clock className="size-5"/>} label="รออนุมัติ" value={pendingCount} caption="รายการ" tone="orange" link="/approvals"/>
@@ -153,10 +150,13 @@ export function DashboardPage() {
       </section>
 
       <section className="enter-stagger mb-5 grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2">
-        <Card><CardHeader title="สถิติการใช้ห้องประชุมแต่ละห้อง" description="จำนวนรายการที่ยืนยันแล้ว"/><CardBody><div className="group/bars flex h-44 items-end gap-3 overflow-x-auto border-b border-line px-2 pt-8 sm:h-56">{roomStats.map(({room,count},index)=><RoomBar key={room.roomId} name={room.name} count={count} percent={Math.max(5,count/(roomStats[0]?.count||1)*65)} color={donutColors[index%donutColors.length]!} index={index}/>)}{!roomStats.length&&<p className="m-auto text-sm text-ink-muted">ยังไม่มีข้อมูลห้องประชุม</p>}</div></CardBody></Card>
+        <Card><CardHeader title="สถิติการใช้ห้องประชุมแต่ละห้อง" description="จำนวนรายการที่ยืนยันแล้ว"/><CardBody><div className="group/bars flex h-44 items-end gap-3 overflow-x-auto border-b border-line px-2 pt-8 sm:h-52">{roomStats.map(({room,count},index)=><RoomBar key={room.roomId} name={room.name} count={count} percent={Math.max(5,count/(roomStats[0]?.count||1)*65)} color={donutColors[index%donutColors.length]!} index={index}/>)}{!roomStats.length&&<p className="m-auto text-sm text-ink-muted">ยังไม่มีข้อมูลห้องประชุม</p>}</div></CardBody></Card>
         <Card><CardHeader title="สถิติการขอใช้อุปกรณ์/สิ่งอำนวยความสะดวก" description="จากคำขอจองทั้งหมด"/><CardBody><div className="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-4 sm:grid-cols-[190px_minmax(0,1fr)] sm:gap-5"><div className="relative mx-auto grid size-32 place-items-center sm:size-44"><FacilityDonut items={facilityStats} colors={donutColors} total={facilityTotal} sweep={sweep} active={activeFacility} onActive={setActiveFacility}/><div className="relative grid -translate-y-1.5 place-items-center text-center sm:-translate-y-2"><div><strong data-numeric className="block text-xl text-ink sm:text-2xl"><CountUp value={facilityTotal} duration={1100}/></strong><span className="hidden text-xs leading-tight text-ink-muted sm:block">รายการอุปกรณ์</span><span className="sr-only sm:hidden">รายการอุปกรณ์</span></div></div></div><ul className="space-y-2">{facilityStats.map((item,index)=><li key={item.key} onMouseEnter={()=>setActiveFacility(item.key)} onMouseLeave={()=>setActiveFacility(null)} className={`${item.count===0?'hidden sm:flex':'flex'} -mx-2 items-center justify-between gap-3 rounded-lg px-2 py-0.5 text-sm transition-colors duration-150 ${activeFacility===item.key?'bg-neutral-soft font-semibold':''}`}><span className="flex min-w-0 items-center gap-2"><i className={`size-3 shrink-0 rounded-sm transition-transform duration-150 ${activeFacility===item.key?'scale-125':''}`} style={{backgroundColor:donutColors[index%donutColors.length]}}/><span className="truncate">{item.label}</span></span><strong data-numeric><CountUp value={item.count} duration={1100}/></strong></li>)}</ul></div></CardBody></Card>
         <DepartmentRanking bookings={bookings} />
       </section>
+
+      {/* ประกาศอยู่ใต้กราฟ เพื่อให้เปิดหน้ามาแล้วเห็นกราฟทันที */}
+      <AnnouncementsPanel refreshKey={refreshKey} />
 
       <Card className="mb-5"><CardHeader title="รายการจองล่าสุด" description="รายการใหม่และรายการที่กำลังจะมาถึง" action={<Link className="inline-flex min-h-11 items-center text-sm font-medium text-brand hover:underline" to="/my-bookings">ดูทั้งหมด</Link>}/>
       <ul className="divide-y divide-line sm:hidden">{latest.slice(0,3).map((booking)=><li key={booking.bookingId} className="px-5 py-3">
@@ -285,7 +285,7 @@ function RoomBar({name,count,percent,color,index}:{name:string;count:number;perc
         <div className="absolute inset-y-0 left-0 w-1.5 bg-white/25"/>
       </div>
     </div>
-    <span className="line-clamp-2 min-h-9 w-full text-center text-[11px] leading-4 text-ink-muted transition-colors duration-200 group-hover/bar:font-semibold group-hover/bar:text-ink">{name}</span>
+    <span className="line-clamp-2 h-8 w-full shrink-0 text-center text-[11px] leading-4 text-ink-muted transition-colors duration-200 group-hover/bar:font-semibold group-hover/bar:text-ink">{name}</span>
   </div>;
 }
 
@@ -341,7 +341,7 @@ function SummaryCard({icon,label,value,caption,tone,link}:{icon:React.ReactNode;
     green:{card:'from-emerald-50 ring-emerald-100',tile:'from-emerald-500 to-teal-600 shadow-emerald-500/30'},
     purple:{card:'from-slate-50 ring-slate-200',tile:'from-blue-800 to-slate-900 shadow-slate-700/30'},
   }[tone];
-  const content=<div className="flex items-center gap-3 p-3 sm:gap-3.5 sm:px-4 sm:py-4">
+  const content=<div className="flex items-center gap-3 p-3 sm:gap-3.5 sm:px-4 sm:py-3">
     <span aria-hidden="true" className={`grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white shadow-lg transition-transform duration-200 ease-out group-hover:-rotate-6 group-hover:scale-110 sm:size-12 ${styles.tile}`}>{icon}</span>
     <span className="min-w-0"><span className="block truncate text-xs font-medium text-ink-muted sm:text-sm">{label}</span><strong data-numeric className="block text-2xl font-semibold leading-tight text-ink sm:text-[1.75rem]"><CountUp value={value}/></strong><span className="hidden text-xs text-ink-subtle sm:inline">{caption}</span></span>
   </div>;
