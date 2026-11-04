@@ -49,9 +49,10 @@ export function DepartmentRanking({ bookings }: { bookings: DemoBooking[] }) {
                       <span className="hidden sm:inline"> ({item.attendees} คน)</span>
                     </span>
                   </div>
-                  <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-surface-sunken ring-1 ring-inset ring-line">
+                  {/* แท่งนูนแบบ 3 มิติ: รางเว้าลงไป (เงาด้านใน) + แท่งมีแสงด้านบนและขอบทึบด้านล่าง */}
+                  <div className="mt-1.5 h-3 overflow-hidden rounded-full bg-surface-sunken shadow-[inset_0_2px_3px_hsl(220_30%_20%/0.12)] ring-1 ring-inset ring-line">
                     <div
-                      className="grow-x h-full origin-left rounded-full bg-brand-gradient"
+                      className="grow-x h-full origin-left rounded-full bg-brand-gradient shadow-[inset_0_1px_0_hsl(0_0%_100%/0.45),inset_0_-2px_0_hsl(224_76%_20%/0.45)]"
                       style={{ transform: `scaleX(${item.count / top})`, animationDelay: `${index * 60}ms` }}
                     />
                   </div>

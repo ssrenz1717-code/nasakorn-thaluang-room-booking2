@@ -64,7 +64,7 @@ export function TopNav({ role, badges }: { role: UserRole; badges: Record<string
         aria-label={pinned ? 'ย่อเมนู' : 'ขยายเมนูค้างไว้'}
         aria-pressed={pinned}
         title={pinned ? 'ย่อเมนู' : 'ขยายเมนูค้างไว้'}
-        className="hidden size-10 shrink-0 place-items-center rounded-inner bg-brand-gradient text-ink-inverse shadow-brand transition-[filter] duration-150 hover:brightness-110 lg:grid"
+        className="hidden size-10 shrink-0 place-items-center rounded-inner bg-brand-gradient text-ink-inverse shadow-[var(--shadow-3d-brand)] transition-[filter,transform,box-shadow] duration-150 hover:brightness-110 active:translate-y-0.5 active:shadow-[var(--shadow-3d-brand-pressed)] lg:grid"
       >
         <CalendarCheck2 className="size-5" aria-hidden="true" />
       </button>
@@ -78,9 +78,10 @@ export function TopNav({ role, badges }: { role: UserRole; badges: Record<string
         onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) schedulePeek(false); }}
         className="hidden min-w-0 flex-1 justify-center lg:flex"
       >
+        {/* แถบนูน 3 มิติ: ขอบทึบด้านล่าง กางแล้วช่องไฟกว้างขึ้นให้แถบยาวออก */}
         <ul className={cn(
-          'flex items-center gap-1 rounded-pill bg-surface p-1.5 ring-1 ring-line transition-shadow duration-200',
-          expanded ? 'shadow-raised' : 'shadow-card',
+          'flex items-center rounded-pill bg-gradient-to-b from-surface to-surface-sunken ring-1 ring-line shadow-[var(--shadow-3d-bar)] transition-[padding,gap] duration-200 ease-out',
+          expanded ? 'gap-1.5 p-2 xl:gap-2' : 'gap-1 p-1.5',
         )}>
           {items.map((item) => {
             const badge = badges[item.path] ?? 0;
@@ -92,8 +93,12 @@ export function TopNav({ role, badges }: { role: UserRole; badges: Record<string
                   title={item.label}
                   aria-label={badge > 0 ? `${item.label} (มี ${badge} รายการ)` : item.label}
                   className={({ isActive }) => cn(
-                    'flex min-h-10 items-center whitespace-nowrap rounded-pill px-3 text-sm font-medium transition-colors duration-150',
-                    isActive ? 'bg-brand-gradient text-ink-inverse shadow-brand' : 'text-ink-muted hover:bg-brand-soft hover:text-brand',
+                    'flex min-h-10 items-center whitespace-nowrap rounded-pill text-sm font-medium',
+                    'transition-[background-color,color,box-shadow,transform,padding] duration-200 ease-out',
+                    expanded ? 'px-3 xl:px-4' : 'px-3',
+                    isActive
+                      ? '-translate-y-px bg-brand-gradient text-ink-inverse shadow-[var(--shadow-3d-brand)] active:translate-y-0.5 active:shadow-[var(--shadow-3d-brand-pressed)]'
+                      : 'text-ink-muted hover:-translate-y-px hover:bg-brand-soft hover:text-brand hover:shadow-[var(--shadow-3d-chip)] active:translate-y-0 active:shadow-none',
                   )}
                 >
                   {({ isActive }) => (

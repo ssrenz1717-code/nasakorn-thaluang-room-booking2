@@ -99,6 +99,11 @@
   --color-cyan: #0891b2;
 
   --shadow-brand: 0 6px 18px -6px hsl(225 80% 40% / 0.55);
+  /* ปุ่ม/แถบนูนแบบ 3 มิติ: ขอบทึบด้านล่าง + เงานุ่ม กดแล้วยุบลง (ดูเมนูแถบบน) */
+  --shadow-3d-brand: 0 3px 0 hsl(224 76% 22%), 0 10px 20px -8px hsl(225 80% 40% / 0.6);
+  --shadow-3d-brand-pressed: 0 1px 0 hsl(224 76% 22%), 0 4px 10px -6px hsl(225 80% 40% / 0.5);
+  --shadow-3d-bar: 0 3px 0 var(--color-line-strong), 0 14px 30px -14px hsl(220 40% 20% / 0.35);
+  --shadow-3d-chip: 0 2px 0 var(--color-brand-border);
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 

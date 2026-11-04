@@ -153,8 +153,8 @@ export function DashboardPage() {
       </section>
 
       <section className="enter-stagger mb-5 grid grid-cols-[minmax(0,1fr)] gap-5 xl:grid-cols-2">
-        <Card><CardHeader title="สถิติการใช้ห้องประชุมแต่ละห้อง" description="จำนวนรายการที่ยืนยันแล้ว"/><CardBody><div className="group/bars flex h-40 items-end gap-3 overflow-x-auto border-b border-line px-2 pt-6 sm:h-52">{roomStats.map(({room,count},index)=><RoomBar key={room.roomId} name={room.name} count={count} percent={Math.max(5,count/(roomStats[0]?.count||1)*65)} color={donutColors[index%donutColors.length]!} index={index}/>)}{!roomStats.length&&<p className="m-auto text-sm text-ink-muted">ยังไม่มีข้อมูลห้องประชุม</p>}</div></CardBody></Card>
-        <Card><CardHeader title="สถิติการขอใช้อุปกรณ์/สิ่งอำนวยความสะดวก" description="จากคำขอจองทั้งหมด"/><CardBody><div className="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-4 sm:grid-cols-[190px_minmax(0,1fr)] sm:gap-5"><div className="relative mx-auto grid size-32 place-items-center sm:size-44"><FacilityDonut items={facilityStats} colors={donutColors} total={facilityTotal} sweep={sweep} active={activeFacility} onActive={setActiveFacility}/><div className="relative grid size-20 place-items-center rounded-full bg-surface text-center sm:size-28"><div><strong data-numeric className="block text-xl text-ink sm:text-2xl"><CountUp value={facilityTotal} duration={1100}/></strong><span className="block text-[11px] leading-tight text-ink-muted sm:text-xs">รายการ<br className="sm:hidden"/>อุปกรณ์</span></div></div></div><ul className="space-y-2">{facilityStats.map((item,index)=><li key={item.key} onMouseEnter={()=>setActiveFacility(item.key)} onMouseLeave={()=>setActiveFacility(null)} className={`${item.count===0?'hidden sm:flex':'flex'} -mx-2 items-center justify-between gap-3 rounded-lg px-2 py-0.5 text-sm transition-colors duration-150 ${activeFacility===item.key?'bg-neutral-soft font-semibold':''}`}><span className="flex min-w-0 items-center gap-2"><i className={`size-3 shrink-0 rounded-sm transition-transform duration-150 ${activeFacility===item.key?'scale-125':''}`} style={{backgroundColor:donutColors[index%donutColors.length]}}/><span className="truncate">{item.label}</span></span><strong data-numeric><CountUp value={item.count} duration={1100}/></strong></li>)}</ul></div></CardBody></Card>
+        <Card><CardHeader title="สถิติการใช้ห้องประชุมแต่ละห้อง" description="จำนวนรายการที่ยืนยันแล้ว"/><CardBody><div className="group/bars flex h-44 items-end gap-3 overflow-x-auto border-b border-line px-2 pt-8 sm:h-56">{roomStats.map(({room,count},index)=><RoomBar key={room.roomId} name={room.name} count={count} percent={Math.max(5,count/(roomStats[0]?.count||1)*65)} color={donutColors[index%donutColors.length]!} index={index}/>)}{!roomStats.length&&<p className="m-auto text-sm text-ink-muted">ยังไม่มีข้อมูลห้องประชุม</p>}</div></CardBody></Card>
+        <Card><CardHeader title="สถิติการขอใช้อุปกรณ์/สิ่งอำนวยความสะดวก" description="จากคำขอจองทั้งหมด"/><CardBody><div className="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-4 sm:grid-cols-[190px_minmax(0,1fr)] sm:gap-5"><div className="relative mx-auto grid size-32 place-items-center sm:size-44"><FacilityDonut items={facilityStats} colors={donutColors} total={facilityTotal} sweep={sweep} active={activeFacility} onActive={setActiveFacility}/><div className="relative grid -translate-y-1.5 place-items-center text-center sm:-translate-y-2"><div><strong data-numeric className="block text-xl text-ink sm:text-2xl"><CountUp value={facilityTotal} duration={1100}/></strong><span className="hidden text-xs leading-tight text-ink-muted sm:block">รายการอุปกรณ์</span><span className="sr-only sm:hidden">รายการอุปกรณ์</span></div></div></div><ul className="space-y-2">{facilityStats.map((item,index)=><li key={item.key} onMouseEnter={()=>setActiveFacility(item.key)} onMouseLeave={()=>setActiveFacility(null)} className={`${item.count===0?'hidden sm:flex':'flex'} -mx-2 items-center justify-between gap-3 rounded-lg px-2 py-0.5 text-sm transition-colors duration-150 ${activeFacility===item.key?'bg-neutral-soft font-semibold':''}`}><span className="flex min-w-0 items-center gap-2"><i className={`size-3 shrink-0 rounded-sm transition-transform duration-150 ${activeFacility===item.key?'scale-125':''}`} style={{backgroundColor:donutColors[index%donutColors.length]}}/><span className="truncate">{item.label}</span></span><strong data-numeric><CountUp value={item.count} duration={1100}/></strong></li>)}</ul></div></CardBody></Card>
         <DepartmentRanking bookings={bookings} />
       </section>
 
@@ -257,42 +257,81 @@ export function DashboardPage() {
   );
 }
 
-/** แท่งกราฟที่โตขึ้นจาก 0 เหลื่อมเวลากันทีละแท่งให้ดูเป็นลำดับ */
+/** ความลึกของแท่ง 3 มิติ (px) — ด้านบนและด้านข้างเอียง 45° ยาวเท่ากันจึงดูเป็นมุมมองไอโซเมตริก */
+const BAR_DEPTH = 10;
+/** ความหนาของวงโดนัท 3 มิติ (px) — ซ้อนชั้นถี่ ๆ ทุก DONUT_STEP px ด้านข้างจึงเนียน ไม่เป็นริ้ว */
+const DONUT_DEPTH = 9;
+const DONUT_STEP = 0.5;
+/** บีบวงกลมตามแนวตั้งให้ดูเหมือนวางเอียงบนโต๊ะ */
+const DONUT_TILT = 0.6;
+
 /**
- * แท่งกราฟ: โตขึ้นจาก 0 ด้วย scaleY (transform ล้วน ไม่คำนวณหน้าใหม่ทุกเฟรม)
- * ชี้แล้วแท่งนั้นยกขึ้น ตัวเลขขยาย แท่งอื่นจางลง (ดู group/bars ที่กล่องแม่)
+ * แท่งกราฟ 3 มิติ: หน้า + ด้านบน + ด้านข้าง (ด้านบนสว่าง ด้านข้างมืด เหมือนแสงมาจากซ้ายบน)
+ * โตขึ้นจาก 0 ด้วย scaleY (transform ล้วน) / ชี้แล้วแท่งนั้นยกขึ้น ตัวเลขขยาย แท่งอื่นจางลง
  */
 function RoomBar({name,count,percent,color,index}:{name:string;count:number;percent:number;color:string;index:number}) {
   const delay=index*80;
   const grow=useAnimatedNumber(1,{duration:900,delay});
   return <div className="group/bar flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2 transition-opacity duration-200 group-hover/bars:opacity-50 hover:opacity-100!" title={`${name}: ${count} รายการ`}>
-    <span data-numeric className="text-sm font-semibold text-ink transition-transform duration-200 ease-out group-hover/bar:-translate-y-1.5 group-hover/bar:scale-125"><CountUp value={count} delay={delay}/></span>
-    <div className="w-full max-w-14 transition-transform duration-200 ease-out group-hover/bar:-translate-y-1.5" style={{height:`${percent}%`}}>
-      <div className="h-full w-full origin-bottom rounded-t-md shadow-sm transition-shadow duration-200 group-hover/bar:shadow-raised" style={{transform:`scaleY(${grow})`,backgroundColor:color}}/>
+    <span data-numeric className="text-sm font-semibold text-ink transition-transform duration-200 ease-out group-hover/bar:-translate-y-2 group-hover/bar:scale-125"><CountUp value={count} delay={delay}/></span>
+    <div className="relative w-full max-w-12 transition-transform duration-200 ease-out group-hover/bar:-translate-y-2" style={{height:`${percent}%`,marginRight:BAR_DEPTH}}>
+      {/* เงาที่พื้นใต้แท่ง — ยกแท่งขึ้นแล้วเงาจางลง */}
+      <span aria-hidden="true" className="absolute -bottom-1.5 left-1 right-[-6px] h-2 rounded-full bg-ink/15 blur-[3px] transition-opacity duration-200 group-hover/bar:opacity-50" />
+      <div className="absolute inset-0 origin-bottom" style={{transform:`scaleY(${grow})`}}>
+        <div className="absolute inset-0" style={{background:`linear-gradient(90deg, ${color}, color-mix(in oklab, ${color} 78%, black))`}}/>
+        <div className="absolute bottom-full left-0 w-full origin-bottom-left" style={{height:BAR_DEPTH,transform:'skewX(-45deg)',background:`color-mix(in oklab, ${color} 62%, white)`}}/>
+        <div className="absolute left-full top-0 h-full origin-top-left" style={{width:BAR_DEPTH,transform:'skewY(-45deg)',background:`color-mix(in oklab, ${color} 58%, black)`}}/>
+        {/* แสงสะท้อนบาง ๆ ที่ขอบซ้าย */}
+        <div className="absolute inset-y-0 left-0 w-1.5 bg-white/25"/>
+      </div>
     </div>
     <span className="line-clamp-2 min-h-9 w-full text-center text-[11px] leading-4 text-ink-muted transition-colors duration-200 group-hover/bar:font-semibold group-hover/bar:text-ink">{name}</span>
   </div>;
 }
 
-/** กราฟวงกลมแบบ SVG: แต่ละสีเป็นชิ้นของตัวเอง จึงชี้ทีละชิ้นได้ (conic-gradient ทำไม่ได้) */
+/**
+ * โดนัท 3 มิติ: บีบวงให้เอียง แล้วซ้อนชั้นสีเข้มลงไปด้านล่างเป็นความหนา
+ * ชั้นบนสุดเท่านั้นที่ชี้ได้ (ชั้นความหนาไม่รับเมาส์) แต่ละสีเป็นชิ้นของตัวเอง จึงชี้ทีละชิ้นได้
+ */
 function FacilityDonut({items,colors,total,sweep,active,onActive}:{items:{key:string;count:number}[];colors:string[];total:number;sweep:number;active:string|null;onActive:(key:string|null)=>void}) {
   const radius=38; const circumference=2*Math.PI*radius;
-  let cursor=0;
-  return <svg viewBox="0 0 100 100" className="absolute inset-0 size-full -rotate-90" aria-hidden="true">
-    <circle cx="50" cy="50" r={radius} fill="none" stroke="var(--color-neutral-soft)" strokeWidth="14"/>
-    {total>0&&items.map((item,index)=>{
-      if(item.count===0) return null;
-      const length=item.count/total*circumference*sweep; const offset=cursor*sweep; cursor+=item.count/total*circumference;
-      const isActive=active===item.key;
-      return <circle key={item.key} cx="50" cy="50" r={radius} fill="none" stroke={colors[index%colors.length]} strokeWidth="14"
-        strokeDasharray={`${length} ${circumference}`} strokeDashoffset={-offset}
-        onMouseEnter={()=>onActive(item.key)} onMouseLeave={()=>onActive(null)}
-        className="cursor-pointer transition-[transform,opacity] duration-200 ease-out"
-        style={{transformOrigin:'50px 50px',transform:isActive?'scale(1.08)':'scale(1)',opacity:active!==null&&!isActive?0.4:1}}/>;
-    })}
-  </svg>;
+  const ring=(layer:'top'|'side')=>{
+    let cursor=0;
+    return <>
+      <circle cx="50" cy="50" r={radius} fill="none" stroke="var(--color-neutral-soft)" strokeWidth="14" style={layer==='side'?{filter:'brightness(0.85)'}:undefined}/>
+      {total>0&&items.map((item,index)=>{
+        if(item.count===0) return null;
+        const length=item.count/total*circumference*sweep; const offset=cursor*sweep; cursor+=item.count/total*circumference;
+        const isActive=active===item.key;
+        const stroke=colors[index%colors.length];
+        return <circle key={item.key} cx="50" cy="50" r={radius} fill="none" strokeWidth="14"
+          stroke={layer==='side'?`color-mix(in oklab, ${stroke} 62%, black)`:stroke}
+          strokeDasharray={`${length} ${circumference}`} strokeDashoffset={-offset}
+          onMouseEnter={layer==='top'?()=>onActive(item.key):undefined} onMouseLeave={layer==='top'?()=>onActive(null):undefined}
+          className={layer==='top'?'cursor-pointer transition-[transform,opacity] duration-200 ease-out':'transition-opacity duration-200'}
+          style={{transformOrigin:'50px 50px',transform:layer==='top'&&isActive?'scale(1.08)':'scale(1)',opacity:active!==null&&!isActive?0.4:1}}/>;
+      })}
+    </>;
+  };
+  const layerStyle=(drop:number)=>({transform:`translateY(${drop-DONUT_DEPTH/2}px) scaleY(${DONUT_TILT})`});
+  return <div className="absolute inset-0" aria-hidden="true">
+    {/* เงาบนพื้นใต้โดนัท */}
+    <span className="absolute inset-x-[8%] bottom-[16%] h-[18%] rounded-[50%] bg-ink/15 blur-md"/>
+    {/* ชั้นความหนาเบลอนิดเดียว ขอบที่ซ้อนกันจึงกลืนเป็นผิวเดียว ไม่เห็นเป็นริ้ว */}
+    <div className="absolute inset-0" style={{filter:'blur(0.6px)'}}>
+      {Array.from({length:DONUT_DEPTH/DONUT_STEP},(_,index)=>DONUT_DEPTH-index*DONUT_STEP).map((drop)=>
+        <svg key={drop} viewBox="0 0 100 100" className="pointer-events-none absolute inset-0 size-full" style={layerStyle(drop)}>
+          <g transform="rotate(-90 50 50)">{ring('side')}</g>
+        </svg>)}
+    </div>
+    <svg viewBox="0 0 100 100" className="absolute inset-0 size-full" style={layerStyle(0)}>
+      <g transform="rotate(-90 50 50)">{ring('top')}</g>
+      {/* แสงไล่ด้านบนของวง ให้ผิวดูมันเล็กน้อย */}
+      <circle cx="50" cy="50" r={radius} fill="none" stroke="url(#donut-gloss)" strokeWidth="14" pointerEvents="none"/>
+      <defs><linearGradient id="donut-gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="white" stopOpacity="0.35"/><stop offset="0.5" stopColor="white" stopOpacity="0"/></linearGradient></defs>
+    </svg>
+  </div>;
 }
-
 
 function SummaryCard({icon,label,value,caption,tone,link}:{icon:React.ReactNode;label:string;value:number;caption:string;tone:'blue'|'orange'|'green'|'purple';link?:string}) {
   // สีของการ์ดตรงกับความหมาย: รออนุมัติ=เหลือง อนุมัติแล้ว=เขียว ส่วนฟ้า/น้ำเงินเข้มเป็นสีตกแต่ง
