@@ -37,6 +37,7 @@ export const SHEET_AUDIT = 'AuditLogs';
 export const SHEET_SETTINGS = 'Settings';
 export const SHEET_META = 'Meta';
 export const SHEET_ANNOUNCEMENTS = 'Announcements';
+export const SHEET_LOOKUPS = 'Lookups';
 
 /**
  * คอลัมน์ของ Bookings เรียงให้ 6 คอลัมน์แรกเป็นคอลัมน์ที่ใช้ตรวจเวลาทับซ้อน
@@ -69,6 +70,7 @@ export const SHEET_SPECS: SheetSpec[] = [
       'lastLoginAt',
       'createdAt',
       'updatedAt',
+      'position',
     ],
   },
   {
@@ -134,6 +136,7 @@ export const SHEET_SPECS: SheetSpec[] = [
       'approvalStep',
       'approvalLog',
       'customLocation',
+      'meetingType',
     ],
   },
   {
@@ -170,6 +173,12 @@ export const SHEET_SPECS: SheetSpec[] = [
     name: SHEET_ANNOUNCEMENTS,
     keyColumn: 'announcementId',
     headers: ['announcementId', 'title', 'body', 'tone', 'expiresOn', 'createdBy', 'createdAt', 'updatedAt', 'archivedAt'],
+  },
+  {
+    // ข้อมูลตั้งต้นที่ผู้ดูแลแก้เองได้ (อุปกรณ์ ประเภทการประชุม แผนก ตำแหน่ง) — kind แยกชนิด
+    name: SHEET_LOOKUPS,
+    keyColumn: 'lookupId',
+    headers: ['lookupId', 'kind', 'key', 'label', 'note', 'sortOrder', 'active', 'createdAt', 'updatedAt', 'archivedAt'],
   },
 ];
 

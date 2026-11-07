@@ -9,9 +9,10 @@ export const ROOM_EQUIPMENT = [
   'hdmi',
 ] as const;
 
-export type RoomEquipment = (typeof ROOM_EQUIPMENT)[number];
+/** รหัสอุปกรณ์ประจำห้อง — ผู้ดูแลเพิ่มรายการเองได้ (ชีต Lookups ชนิด roomEquipment) ค่าข้างบนคือชุดเริ่มต้น */
+export type RoomEquipment = string;
 
-export const ROOM_EQUIPMENT_LABEL_TH: Record<RoomEquipment, string> = {
+export const ROOM_EQUIPMENT_LABEL_TH: Record<(typeof ROOM_EQUIPMENT)[number], string> = {
   projector: 'โปรเจกเตอร์',
   tv: 'ทีวี',
   whiteboard: 'ไวท์บอร์ด',
@@ -34,7 +35,13 @@ export function isBookableRoomStatus(status: RoomStatus): boolean {
   return status === 'active';
 }
 
+/** รูปห้องที่ย่อแล้วเก็บในเซลล์เดียว (เซลล์ Google Sheets รับได้ 50,000 ตัวอักษร) */
+export const ROOM_IMAGE_MAX_CHARS = 48_000;
+const IMAGE_DATA_URL = /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+
 export interface RoomInput {
+  /** ว่าง = เพิ่มห้องใหม่ */
+  roomId: string;
   code: string;
   name: string;
   description: string;
@@ -50,6 +57,7 @@ export function validateRoomInput(raw: unknown): ValidationResult<RoomInput> {
   const check = new Check();
 
   const value: RoomInput = {
+    roomId: check.string('roomId', input.roomId, { label: 'รหัสอ้างอิงห้อง', max: 60, fallback: '' }),
     code: check.string('code', input.code, {
       label: 'รหัสห้อง',
       max: 20,
@@ -72,8 +80,8 @@ export function validateRoomInput(raw: unknown): ValidationResult<RoomInput> {
       min: 1,
       max: 1000,
     }),
-    equipment: check.manyOf('equipment', input.equipment, ROOM_EQUIPMENT, { label: 'อุปกรณ์' }),
-    imageUrl: check.urlOrNull('imageUrl', input.imageUrl, { label: 'ลิงก์รูปภาพ' }),
+    equipment: check.keys('equipment', input.equipment, { label: 'อุปกรณ์' }),
+    imageUrl: roomImage(check, input.imageUrl),
     status: check.oneOf('status', input.status, ROOM_STATUSES, {
       label: 'สถานะห้อง',
       fallback: 'active',
@@ -81,6 +89,22 @@ export function validateRoomInput(raw: unknown): ValidationResult<RoomInput> {
   };
 
   return check.result(value);
+}
+
+/** รูปห้อง: ลิงก์ https หรือรูปที่ย่อแล้ว (data URL) — ไม่บังคับ */
+function roomImage(check: Check, raw: unknown): string | null {
+  if (typeof raw === 'string' && raw.startsWith('data:')) {
+    if (!IMAGE_DATA_URL.test(raw)) {
+      check.fail('imageUrl', 'ไฟล์รูปต้องเป็น JPG, PNG หรือ WebP');
+      return null;
+    }
+    if (raw.length > ROOM_IMAGE_MAX_CHARS) {
+      check.fail('imageUrl', 'รูปใหญ่เกินไป ลองเลือกรูปอื่นหรือใช้ลิงก์รูปแทน');
+      return null;
+    }
+    return raw;
+  }
+  return check.urlOrNull('imageUrl', raw, { label: 'ลิงก์รูปภาพ' });
 }
 
 /**

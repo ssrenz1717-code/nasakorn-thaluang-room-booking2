@@ -1,10 +1,14 @@
 import { DATE_KEY_PATTERN, MINUTES_PER_DAY } from '../time/bangkok';
 import { Check, type ValidationResult, asRecord } from '../validate/check';
-import { ROOM_EQUIPMENT, type RoomEquipment } from './room';
+import type { RoomEquipment } from './room';
 
 export const REQUEST_FACILITIES = ['projector', 'soundSystem', 'microphone', 'airConditioning', 'internet'] as const;
-export type RequestFacility = (typeof REQUEST_FACILITIES)[number];
-export const REQUEST_FACILITY_LABEL_TH: Record<RequestFacility, string> = {
+/**
+ * รหัสอุปกรณ์ที่ขอใช้ — ผู้ดูแลเพิ่มรายการเองได้ (ชีต Lookups ชนิด facility)
+ * 5 รายการข้างบนคือช่องที่พิมพ์ไว้ในแบบคำขอกระดาษ รายการที่เพิ่มภายหลังพิมพ์ในบรรทัด "อื่น ๆ"
+ */
+export type RequestFacility = string;
+export const REQUEST_FACILITY_LABEL_TH: Record<(typeof REQUEST_FACILITIES)[number], string> = {
   projector: 'เครื่องฉายภาพ (Projector)',
   soundSystem: 'ระบบเสียง',
   microphone: 'ไมโครโฟน',
@@ -34,6 +38,8 @@ export interface BookingRequest {
   note: string;
   equipment: RoomEquipment[];
   requestedFacilities: RequestFacility[];
+  /** ประเภทการประชุม (รหัสจาก Lookups ชนิด meetingType) — ไม่บังคับ */
+  meetingType: string;
   extraFurnitureCount: number;
   otherFacility: string;
   termsAccepted: boolean;
@@ -89,11 +95,10 @@ export function validateBookingRequest(raw: unknown): ValidationResult<BookingRe
       max: 1000,
       fallback: '',
     }),
-    equipment: check.manyOf('equipment', input.equipment, ROOM_EQUIPMENT, {
-      label: 'อุปกรณ์ที่ต้องการ',
-    }),
-    requestedFacilities: check.manyOf('requestedFacilities', input.requestedFacilities, REQUEST_FACILITIES, {
-      label: 'อุปกรณ์ที่ขอใช้',
+    equipment: check.keys('equipment', input.equipment, { label: 'อุปกรณ์ที่ต้องการ' }),
+    requestedFacilities: check.keys('requestedFacilities', input.requestedFacilities, { label: 'อุปกรณ์ที่ขอใช้' }),
+    meetingType: check.string('meetingType', input.meetingType, {
+      label: 'ประเภทการประชุม', max: 40, fallback: '', pattern: /^[A-Za-z0-9_-]*$/, patternMessage: 'ประเภทการประชุมไม่ถูกต้อง',
     }),
     extraFurnitureCount: check.integer('extraFurnitureCount', input.extraFurnitureCount ?? 0, {
       label: 'จำนวนโต๊ะ/เก้าอี้เสริม', min: 0, max: 500,

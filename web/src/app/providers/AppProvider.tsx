@@ -185,6 +185,11 @@ export function useApp(): AppState {
   return context;
 }
 
+/** สำหรับส่วนที่ใช้ได้ทั้งในและนอกแอป (เช่นแผ่นแบบฟอร์มที่พิมพ์) — นอก AppProvider ได้ null */
+export function useOptionalApp(): AppState | null {
+  return useContext(AppContext);
+}
+
 /** ใช้ในหน้าที่ต้องล็อกอินแล้วเท่านั้น — การ์ดหน้าเว็บรับประกันว่ามีผู้ใช้แล้ว */
 export function useCurrentUser(): SessionUser {
   const { user } = useApp();

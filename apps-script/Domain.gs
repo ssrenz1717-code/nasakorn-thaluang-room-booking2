@@ -36,6 +36,10 @@ var Domain = (() => {
     DATE_KEY_PATTERN: () => DATE_KEY_PATTERN,
     DEFAULT_SYSTEM_SETTINGS: () => DEFAULT_SYSTEM_SETTINGS,
     LOCK_HOLDING_STATUSES: () => LOCK_HOLDING_STATUSES,
+    LOOKUP_KEY_PATTERN: () => LOOKUP_KEY_PATTERN,
+    LOOKUP_KINDS: () => LOOKUP_KINDS,
+    LOOKUP_KIND_LABEL_TH: () => LOOKUP_KIND_LABEL_TH,
+    LOOKUP_NOTE_LABEL_TH: () => LOOKUP_NOTE_LABEL_TH,
     MINUTES_PER_DAY: () => MINUTES_PER_DAY,
     OPEN_LOCATION_ROOM_CODE: () => OPEN_LOCATION_ROOM_CODE,
     PASSWORD_MAX_LENGTH: () => PASSWORD_MAX_LENGTH,
@@ -49,12 +53,14 @@ var Domain = (() => {
     REQUEST_FACILITY_LABEL_TH: () => REQUEST_FACILITY_LABEL_TH,
     ROOM_EQUIPMENT: () => ROOM_EQUIPMENT,
     ROOM_EQUIPMENT_LABEL_TH: () => ROOM_EQUIPMENT_LABEL_TH,
+    ROOM_IMAGE_MAX_CHARS: () => ROOM_IMAGE_MAX_CHARS,
     ROOM_STATUSES: () => ROOM_STATUSES,
     ROOM_STATUS_LABEL_TH: () => ROOM_STATUS_LABEL_TH,
     SETTING_DESCRIPTIONS: () => SETTING_DESCRIPTIONS,
     SHEET_ANNOUNCEMENTS: () => SHEET_ANNOUNCEMENTS,
     SHEET_AUDIT: () => SHEET_AUDIT,
     SHEET_BOOKINGS: () => SHEET_BOOKINGS,
+    SHEET_LOOKUPS: () => SHEET_LOOKUPS,
     SHEET_META: () => SHEET_META,
     SHEET_NOTIFICATIONS: () => SHEET_NOTIFICATIONS,
     SHEET_ROOMS: () => SHEET_ROOMS,
@@ -68,6 +74,7 @@ var Domain = (() => {
     USER_STATUSES: () => USER_STATUSES,
     USER_STATUS_LABEL_TH: () => USER_STATUS_LABEL_TH,
     activeAnnouncements: () => activeAnnouncements,
+    activeLookups: () => activeLookups,
     addDaysToDateKey: () => addDaysToDateKey,
     asRecord: () => asRecord,
     assertTransition: () => assertTransition,
@@ -91,6 +98,7 @@ var Domain = (() => {
     dateKeyRange: () => dateKeyRange,
     dayOfWeekOfDateKey: () => dayOfWeekOfDateKey,
     decideApprovalStep: () => decideApprovalStep,
+    defaultLookups: () => defaultLookups,
     findConflicts: () => findConflicts,
     findRowNumber: () => findRowNumber,
     formatTimeOfDay: () => formatTimeOfDay,
@@ -106,8 +114,10 @@ var Domain = (() => {
     isStartBlocked: () => isStartBlocked,
     keyValueToObject: () => keyValueToObject,
     lastAdminProblem: () => lastAdminProblem,
+    lookupLabel: () => lookupLabel,
     mergeIntervals: () => mergeIntervals,
     missingColumns: () => missingColumns,
+    newLookupKey: () => newLookupKey,
     normalizeDateKey: () => normalizeDateKey,
     normalizeUserRole: () => normalizeUserRole,
     normalizeUsername: () => normalizeUsername,
@@ -132,11 +142,13 @@ var Domain = (() => {
     sessionExpiryFrom: () => sessionExpiryFrom,
     settingsToRows: () => settingsToRows,
     sheetSpec: () => sheetSpec,
+    sortLookups: () => sortLookups,
     stepForRole: () => stepForRole,
     suggestAlternatives: () => suggestAlternatives,
     toDateKey: () => toDateKey,
     toMinutesOfDay: () => toMinutesOfDay,
     tzOffsetMinutes: () => tzOffsetMinutes,
+    unknownLookupKeys: () => unknownLookupKeys,
     validateAnnouncementInput: () => validateAnnouncementInput,
     validateAvailabilityInput: () => validateAvailabilityInput,
     validateBookingRequest: () => validateBookingRequest,
@@ -144,6 +156,7 @@ var Domain = (() => {
     validateCancelBookingInput: () => validateCancelBookingInput,
     validateDecideBookingInput: () => validateDecideBookingInput,
     validateLoginInput: () => validateLoginInput,
+    validateLookupInput: () => validateLookupInput,
     validatePinLoginInput: () => validatePinLoginInput,
     validateResetPasswordInput: () => validateResetPasswordInput,
     validateResetPinInput: () => validateResetPinInput,
@@ -258,6 +271,21 @@ var Domain = (() => {
           return picked;
         }
       }
+      return picked;
+    }
+    /**
+     * รายการรหัสจากข้อมูลที่ผู้ดูแลแก้ได้ (Lookups) — ตรวจแค่รูปแบบที่นี่
+     * ว่ารหัสยังเปิดใช้อยู่หรือไม่ ฝั่ง server ตรวจกับรายการจริงอีกชั้น (unknownLookupKeys)
+     */
+    keys(field, raw, options) {
+      var _a, _b;
+      if (raw === void 0 || raw === null) return [];
+      if (!Array.isArray(raw) || raw.some((item) => typeof item !== "string" || !/^[A-Za-z0-9_-]{1,40}$/.test(item))) {
+        this.fail(field, `${options.label}\u0E21\u0E35\u0E04\u0E48\u0E32\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E23\u0E39\u0E49\u0E08\u0E31\u0E01`);
+        return [];
+      }
+      const picked = [...new Set(raw)];
+      if (picked.length > ((_a = options.max) != null ? _a : 30)) this.fail(field, `${options.label}\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E44\u0E14\u0E49\u0E44\u0E21\u0E48\u0E40\u0E01\u0E34\u0E19 ${(_b = options.max) != null ? _b : 30} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23`);
       return picked;
     }
     /** URL หรือ null — ใช้กับรูปภาพห้องที่ไม่บังคับ */
@@ -482,6 +510,7 @@ var Domain = (() => {
   var SHEET_SETTINGS = "Settings";
   var SHEET_META = "Meta";
   var SHEET_ANNOUNCEMENTS = "Announcements";
+  var SHEET_LOOKUPS = "Lookups";
   var BOOKING_HOT_COLUMNS = 6;
   var SHEET_SPECS = [
     {
@@ -504,7 +533,8 @@ var Domain = (() => {
         "tokenVersion",
         "lastLoginAt",
         "createdAt",
-        "updatedAt"
+        "updatedAt",
+        "position"
       ]
     },
     {
@@ -569,7 +599,8 @@ var Domain = (() => {
         // การอนุมัติ 3 ขั้น: ขั้นที่รออยู่ และประวัติผู้ลงนาม (JSON)
         "approvalStep",
         "approvalLog",
-        "customLocation"
+        "customLocation",
+        "meetingType"
       ]
     },
     {
@@ -606,6 +637,12 @@ var Domain = (() => {
       name: SHEET_ANNOUNCEMENTS,
       keyColumn: "announcementId",
       headers: ["announcementId", "title", "body", "tone", "expiresOn", "createdBy", "createdAt", "updatedAt", "archivedAt"]
+    },
+    {
+      // ข้อมูลตั้งต้นที่ผู้ดูแลแก้เองได้ (อุปกรณ์ ประเภทการประชุม แผนก ตำแหน่ง) — kind แยกชนิด
+      name: SHEET_LOOKUPS,
+      keyColumn: "lookupId",
+      headers: ["lookupId", "kind", "key", "label", "note", "sortOrder", "active", "createdAt", "updatedAt", "archivedAt"]
     }
   ];
   function sheetSpec(name) {
@@ -815,6 +852,7 @@ var Domain = (() => {
       username,
       displayName: check.string("displayName", input.displayName, { label: "\u0E0A\u0E37\u0E48\u0E2D-\u0E19\u0E32\u0E21\u0E2A\u0E01\u0E38\u0E25", min: 1, max: 100 }),
       department: check.string("department", input.department, { label: "\u0E2B\u0E19\u0E48\u0E27\u0E22\u0E07\u0E32\u0E19", max: 100, fallback: "" }),
+      position: check.string("position", input.position, { label: "\u0E15\u0E33\u0E41\u0E2B\u0E19\u0E48\u0E07", max: 100, fallback: "" }),
       role: check.oneOf("role", input.role, USER_ROLES, { label: "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E01\u0E32\u0E23\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19" }),
       status: check.oneOf("status", input.status, USER_STATUSES, { label: "\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49", fallback: "active" }),
       allowedRoomIds: roomIdList(check, input.allowedRoomIds),
@@ -1191,10 +1229,13 @@ var Domain = (() => {
   function isBookableRoomStatus(status) {
     return status === "active";
   }
+  var ROOM_IMAGE_MAX_CHARS = 48e3;
+  var IMAGE_DATA_URL = /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
   function validateRoomInput(raw) {
     const input = asRecord(raw);
     const check = new Check();
     const value = {
+      roomId: check.string("roomId", input.roomId, { label: "\u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E2B\u0E49\u0E2D\u0E07", max: 60, fallback: "" }),
       code: check.string("code", input.code, {
         label: "\u0E23\u0E2B\u0E31\u0E2A\u0E2B\u0E49\u0E2D\u0E07",
         max: 20,
@@ -1217,14 +1258,28 @@ var Domain = (() => {
         min: 1,
         max: 1e3
       }),
-      equipment: check.manyOf("equipment", input.equipment, ROOM_EQUIPMENT, { label: "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C" }),
-      imageUrl: check.urlOrNull("imageUrl", input.imageUrl, { label: "\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E23\u0E39\u0E1B\u0E20\u0E32\u0E1E" }),
+      equipment: check.keys("equipment", input.equipment, { label: "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C" }),
+      imageUrl: roomImage(check, input.imageUrl),
       status: check.oneOf("status", input.status, ROOM_STATUSES, {
         label: "\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E2B\u0E49\u0E2D\u0E07",
         fallback: "active"
       })
     };
     return check.result(value);
+  }
+  function roomImage(check, raw) {
+    if (typeof raw === "string" && raw.startsWith("data:")) {
+      if (!IMAGE_DATA_URL.test(raw)) {
+        check.fail("imageUrl", "\u0E44\u0E1F\u0E25\u0E4C\u0E23\u0E39\u0E1B\u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19 JPG, PNG \u0E2B\u0E23\u0E37\u0E2D WebP");
+        return null;
+      }
+      if (raw.length > ROOM_IMAGE_MAX_CHARS) {
+        check.fail("imageUrl", "\u0E23\u0E39\u0E1B\u0E43\u0E2B\u0E0D\u0E48\u0E40\u0E01\u0E34\u0E19\u0E44\u0E1B \u0E25\u0E2D\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E23\u0E39\u0E1B\u0E2D\u0E37\u0E48\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E43\u0E0A\u0E49\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E23\u0E39\u0E1B\u0E41\u0E17\u0E19");
+        return null;
+      }
+      return raw;
+    }
+    return check.urlOrNull("imageUrl", raw, { label: "\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E23\u0E39\u0E1B\u0E20\u0E32\u0E1E" });
   }
   var OPEN_LOCATION_ROOM_CODE = "OTHER";
   function isOpenLocationRoom(room) {
@@ -1326,7 +1381,10 @@ var Domain = (() => {
     if (missing.length > 0) {
       issues.push({
         code: "EQUIPMENT_UNAVAILABLE",
-        message: `\u0E2B\u0E49\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E21\u0E35 ${missing.map((item) => ROOM_EQUIPMENT_LABEL_TH[item]).join(", ")}`,
+        message: `\u0E2B\u0E49\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E21\u0E35 ${missing.map((item) => {
+          var _a;
+          return (_a = ROOM_EQUIPMENT_LABEL_TH[item]) != null ? _a : item;
+        }).join(", ")}`,
         field: "equipment"
       });
     }
@@ -1529,11 +1587,14 @@ var Domain = (() => {
         max: 1e3,
         fallback: ""
       }),
-      equipment: check.manyOf("equipment", input.equipment, ROOM_EQUIPMENT, {
-        label: "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23"
-      }),
-      requestedFacilities: check.manyOf("requestedFacilities", input.requestedFacilities, REQUEST_FACILITIES, {
-        label: "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E17\u0E35\u0E48\u0E02\u0E2D\u0E43\u0E0A\u0E49"
+      equipment: check.keys("equipment", input.equipment, { label: "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23" }),
+      requestedFacilities: check.keys("requestedFacilities", input.requestedFacilities, { label: "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E17\u0E35\u0E48\u0E02\u0E2D\u0E43\u0E0A\u0E49" }),
+      meetingType: check.string("meetingType", input.meetingType, {
+        label: "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21",
+        max: 40,
+        fallback: "",
+        pattern: /^[A-Za-z0-9_-]*$/,
+        patternMessage: "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07"
       }),
       extraFurnitureCount: check.integer("extraFurnitureCount", (_a = input.extraFurnitureCount) != null ? _a : 0, {
         label: "\u0E08\u0E33\u0E19\u0E27\u0E19\u0E42\u0E15\u0E4A\u0E30/\u0E40\u0E01\u0E49\u0E32\u0E2D\u0E35\u0E49\u0E40\u0E2A\u0E23\u0E34\u0E21",
@@ -1614,6 +1675,103 @@ var Domain = (() => {
   function activeAnnouncements(items, todayKey) {
     const rank = { urgent: 0, notice: 1, info: 2 };
     return items.filter((item) => item.archivedAt === "" && (item.expiresOn === "" || !DATE_KEY_PATTERN.test(item.expiresOn) || item.expiresOn >= todayKey)).sort((a, b) => rank[a.tone] - rank[b.tone] || b.createdAt.localeCompare(a.createdAt));
+  }
+
+  // shared/schemas/lookup.ts
+  var LOOKUP_KINDS = ["roomEquipment", "facility", "meetingType", "department", "position"];
+  var LOOKUP_KIND_LABEL_TH = {
+    roomEquipment: "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E2B\u0E49\u0E2D\u0E07",
+    facility: "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C\u0E17\u0E35\u0E48\u0E02\u0E2D\u0E43\u0E0A\u0E49\u0E44\u0E14\u0E49",
+    meetingType: "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21",
+    department: "\u0E41\u0E1C\u0E19\u0E01\u0E27\u0E34\u0E0A\u0E32 / \u0E2B\u0E19\u0E48\u0E27\u0E22\u0E07\u0E32\u0E19",
+    position: "\u0E15\u0E33\u0E41\u0E2B\u0E19\u0E48\u0E07"
+  };
+  var LOOKUP_NOTE_LABEL_TH = {
+    department: "\u0E2B\u0E31\u0E27\u0E2B\u0E19\u0E49\u0E32\u0E41\u0E1C\u0E19\u0E01 / \u0E2B\u0E31\u0E27\u0E2B\u0E19\u0E49\u0E32\u0E07\u0E32\u0E19"
+  };
+  var LOOKUP_KEY_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
+  function validateLookupInput(raw) {
+    var _a;
+    const input = asRecord(raw);
+    const check = new Check();
+    return check.result({
+      lookupId: check.string("lookupId", input.lookupId, { label: "\u0E23\u0E2B\u0E31\u0E2A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", max: 60, fallback: "" }),
+      kind: check.oneOf("kind", input.kind, LOOKUP_KINDS, { label: "\u0E0A\u0E19\u0E34\u0E14\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25" }),
+      label: check.string("label", input.label, { label: "\u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", min: 1, max: 100 }),
+      note: check.string("note", input.note, { label: "\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38", max: 100, fallback: "" }),
+      sortOrder: check.integer("sortOrder", (_a = input.sortOrder) != null ? _a : 0, { label: "\u0E25\u0E33\u0E14\u0E31\u0E1A", min: 0, max: 9999 }),
+      active: check.boolean("active", input.active, { label: "\u0E2A\u0E16\u0E32\u0E19\u0E30", fallback: true })
+    });
+  }
+  function activeLookups(items, kind) {
+    return sortLookups(items.filter((item) => item.kind === kind && item.active));
+  }
+  function sortLookups(items) {
+    return [...items].sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label, "th"));
+  }
+  function lookupLabel(items, kind, key) {
+    var _a, _b;
+    const found = items.find((item) => item.kind === kind && item.key === key);
+    if (found) return found.label;
+    if (kind === "facility") return (_a = REQUEST_FACILITY_LABEL_TH[key]) != null ? _a : key;
+    if (kind === "roomEquipment") return (_b = ROOM_EQUIPMENT_LABEL_TH[key]) != null ? _b : key;
+    return key;
+  }
+  function unknownLookupKeys(items, kind, keys) {
+    const allowed = new Set(activeLookups(items, kind).map((item) => item.key));
+    return keys.filter((key) => !allowed.has(key));
+  }
+  function newLookupKey(kind, existing, seed) {
+    const prefix = kind.slice(0, 3);
+    let key = `${prefix}-${seed.toString(36)}`;
+    let n = 1;
+    while (existing.some((item) => item.key === key)) key = `${prefix}-${seed.toString(36)}${n++}`;
+    return key;
+  }
+  var SEED = {
+    roomEquipment: Object.entries(ROOM_EQUIPMENT_LABEL_TH),
+    facility: Object.entries(REQUEST_FACILITY_LABEL_TH),
+    meetingType: [
+      ["internal", "\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E20\u0E32\u0E22\u0E43\u0E19"],
+      ["training", "\u0E2D\u0E1A\u0E23\u0E21 / \u0E2A\u0E31\u0E21\u0E21\u0E19\u0E32"],
+      ["activity", "\u0E01\u0E34\u0E08\u0E01\u0E23\u0E23\u0E21\u0E19\u0E31\u0E01\u0E40\u0E23\u0E35\u0E22\u0E19 \u0E19\u0E31\u0E01\u0E28\u0E36\u0E01\u0E29\u0E32"],
+      ["visitor", "\u0E15\u0E49\u0E2D\u0E19\u0E23\u0E31\u0E1A\u0E41\u0E02\u0E01 / \u0E28\u0E36\u0E01\u0E29\u0E32\u0E14\u0E39\u0E07\u0E32\u0E19"],
+      ["exam", "\u0E2A\u0E2D\u0E1A / \u0E17\u0E14\u0E2A\u0E2D\u0E1A"],
+      ["other", "\u0E2D\u0E37\u0E48\u0E19 \u0E46"]
+    ],
+    department: [
+      ["acc", "\u0E41\u0E1C\u0E19\u0E01\u0E27\u0E34\u0E0A\u0E32\u0E01\u0E32\u0E23\u0E1A\u0E31\u0E0D\u0E0A\u0E35"],
+      ["dbt", "\u0E41\u0E1C\u0E19\u0E01\u0E27\u0E34\u0E0A\u0E32\u0E40\u0E17\u0E04\u0E42\u0E19\u0E42\u0E25\u0E22\u0E35\u0E18\u0E38\u0E23\u0E01\u0E34\u0E08\u0E14\u0E34\u0E08\u0E34\u0E17\u0E31\u0E25"],
+      ["mkt", "\u0E41\u0E1C\u0E19\u0E01\u0E27\u0E34\u0E0A\u0E32\u0E01\u0E32\u0E23\u0E15\u0E25\u0E32\u0E14"],
+      ["auto", "\u0E41\u0E1C\u0E19\u0E01\u0E27\u0E34\u0E0A\u0E32\u0E0A\u0E48\u0E32\u0E07\u0E22\u0E19\u0E15\u0E4C"],
+      ["elec", "\u0E41\u0E1C\u0E19\u0E01\u0E27\u0E34\u0E0A\u0E32\u0E0A\u0E48\u0E32\u0E07\u0E44\u0E1F\u0E1F\u0E49\u0E32\u0E01\u0E33\u0E25\u0E31\u0E07"],
+      ["etro", "\u0E41\u0E1C\u0E19\u0E01\u0E27\u0E34\u0E0A\u0E32\u0E0A\u0E48\u0E32\u0E07\u0E2D\u0E34\u0E40\u0E25\u0E47\u0E01\u0E17\u0E23\u0E2D\u0E19\u0E34\u0E01\u0E2A\u0E4C"],
+      ["mech", "\u0E41\u0E1C\u0E19\u0E01\u0E27\u0E34\u0E0A\u0E32\u0E0A\u0E48\u0E32\u0E07\u0E01\u0E25\u0E42\u0E23\u0E07\u0E07\u0E32\u0E19"],
+      ["weld", "\u0E41\u0E1C\u0E19\u0E01\u0E27\u0E34\u0E0A\u0E32\u0E0A\u0E48\u0E32\u0E07\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E42\u0E25\u0E2B\u0E30"],
+      ["gen", "\u0E41\u0E1C\u0E19\u0E01\u0E27\u0E34\u0E0A\u0E32\u0E2A\u0E32\u0E21\u0E31\u0E0D\u0E2A\u0E31\u0E21\u0E1E\u0E31\u0E19\u0E18\u0E4C"],
+      ["digital", "\u0E07\u0E32\u0E19\u0E28\u0E39\u0E19\u0E22\u0E4C\u0E14\u0E34\u0E08\u0E34\u0E17\u0E31\u0E25\u0E41\u0E25\u0E30\u0E2A\u0E37\u0E48\u0E2D\u0E2A\u0E32\u0E23\u0E2D\u0E07\u0E04\u0E4C\u0E01\u0E23"],
+      ["plan", "\u0E1D\u0E48\u0E32\u0E22\u0E1E\u0E31\u0E12\u0E19\u0E32\u0E22\u0E38\u0E17\u0E18\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C\u0E41\u0E25\u0E30\u0E41\u0E1C\u0E19\u0E07\u0E32\u0E19"]
+    ],
+    position: [
+      ["director", "\u0E1C\u0E39\u0E49\u0E2D\u0E33\u0E19\u0E27\u0E22\u0E01\u0E32\u0E23"],
+      ["deputy", "\u0E23\u0E2D\u0E07\u0E1C\u0E39\u0E49\u0E2D\u0E33\u0E19\u0E27\u0E22\u0E01\u0E32\u0E23"],
+      ["head", "\u0E2B\u0E31\u0E27\u0E2B\u0E19\u0E49\u0E32\u0E41\u0E1C\u0E19\u0E01\u0E27\u0E34\u0E0A\u0E32"],
+      ["teacher", "\u0E04\u0E23\u0E39"],
+      ["assistant", "\u0E04\u0E23\u0E39\u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22"],
+      ["contract", "\u0E1E\u0E19\u0E31\u0E01\u0E07\u0E32\u0E19\u0E23\u0E32\u0E0A\u0E01\u0E32\u0E23"],
+      ["staff", "\u0E40\u0E08\u0E49\u0E32\u0E2B\u0E19\u0E49\u0E32\u0E17\u0E35\u0E48"]
+    ]
+  };
+  function defaultLookups() {
+    return LOOKUP_KINDS.flatMap((kind) => SEED[kind].map(([key, label, note = ""], index) => ({
+      lookupId: `lk-${kind}-${key}`,
+      kind,
+      key,
+      label,
+      note,
+      sortOrder: (index + 1) * 10,
+      active: true
+    })));
   }
   return __toCommonJS(index_exports);
 })();

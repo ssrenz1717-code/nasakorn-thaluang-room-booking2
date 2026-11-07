@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { FileText, X } from 'lucide-react';
 import { BOOKING_STATUS_LABEL_TH } from '@shared/domain/status';
-import { REQUEST_FACILITY_LABEL_TH, type RequestFacility } from '@shared/schemas/booking';
+import { useLookups } from '../../lib/hooks/useLookups';
 import { isOpenLocationRoom } from '@shared/schemas/room';
 import type { DemoBooking, DemoRoom } from '../../lib/api/demo';
 import { ApprovalProgress } from '../approvals/ApprovalProgress';
@@ -23,9 +23,10 @@ export function BookingDetailDialog({ booking, rooms, onClose }: { booking: Demo
   }, [onClose]);
 
   const room = rooms.find((item) => item.roomId === booking.roomId);
+  const lookups = useLookups();
   const place = isOpenLocationRoom(room) ? booking.customLocation || 'สถานที่อื่น' : room?.name ?? 'ห้องประชุม';
   const facilities = [
-    ...(booking.requestedFacilities ?? []).map((key) => REQUEST_FACILITY_LABEL_TH[key as RequestFacility] ?? key),
+    ...(booking.requestedFacilities ?? []).map((key) => lookups.label('facility', key)),
     ...((booking.extraFurnitureCount ?? 0) > 0 ? [`โต๊ะ/เก้าอี้เพิ่ม ${booking.extraFurnitureCount} ตัว`] : []),
     ...(booking.otherFacility ? [booking.otherFacility] : []),
   ];

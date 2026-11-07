@@ -16,6 +16,7 @@ const TOP_LABEL: Record<string, string> = {
   '/approvals': 'อนุมัติ',
   '/reports': 'พิมพ์ฟอร์ม',
   '/users': 'ผู้ใช้',
+  '/manage': 'ตั้งค่า',
 };
 
 /**

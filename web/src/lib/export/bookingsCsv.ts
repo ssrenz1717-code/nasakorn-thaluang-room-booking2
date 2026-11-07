@@ -1,5 +1,5 @@
 import { BOOKING_STATUS_LABEL_TH } from '@shared/domain/status';
-import { REQUEST_FACILITY_LABEL_TH, type RequestFacility } from '@shared/schemas/booking';
+import { lookupLabel, type LookupItem } from '@shared/schemas/lookup';
 import type { DemoBooking, DemoRoom } from '../api/demo';
 
 const time = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
@@ -19,7 +19,9 @@ function cell(value: unknown): string {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
-const COLUMNS: { header: string; value: (booking: DemoBooking, roomName: string) => unknown }[] = [
+type Label = (key: string) => string;
+
+const COLUMNS: { header: string; value: (booking: DemoBooking, roomName: string, facility: Label) => unknown }[] = [
   { header: 'รหัสการจอง', value: (b) => b.bookingId },
   { header: 'วันที่ (พ.ศ.)', value: (b) => thaiDate(b.dateKey) },
   { header: 'เวลาเริ่ม', value: (b) => time(b.startMin) },
@@ -29,20 +31,21 @@ const COLUMNS: { header: string; value: (booking: DemoBooking, roomName: string)
   { header: 'แผนก/หน่วยงาน', value: (b) => b.department },
   { header: 'จำนวนผู้เข้าร่วม', value: (b) => b.attendees },
   { header: 'สถานะ', value: (b) => BOOKING_STATUS_LABEL_TH[b.status] ?? b.status },
-  { header: 'อุปกรณ์ที่ขอใช้', value: (b) => (b.requestedFacilities ?? []).map((key) => REQUEST_FACILITY_LABEL_TH[key as RequestFacility] ?? key).join(', ') },
+  { header: 'อุปกรณ์ที่ขอใช้', value: (b, _r, facility) => (b.requestedFacilities ?? []).map(facility).join(', ') },
   { header: 'โต๊ะ/เก้าอี้เพิ่ม (ตัว)', value: (b) => b.extraFurnitureCount ?? 0 },
   { header: 'อุปกรณ์อื่น ๆ', value: (b) => b.otherFacility ?? '' },
   { header: 'รายละเอียด', value: (b) => b.note ?? '' },
   { header: 'อีเมลผู้ส่งคำขอ', value: (b) => b.userEmail },
 ];
 
-export function bookingsToCsv(bookings: DemoBooking[], rooms: DemoRoom[]): string {
+export function bookingsToCsv(bookings: DemoBooking[], rooms: DemoRoom[], lookups: readonly LookupItem[] = []): string {
+  const facility: Label = (key) => lookupLabel(lookups, 'facility', key);
   const sorted = [...bookings].sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.startMin - b.startMin);
   const lines = [
     COLUMNS.map((column) => cell(column.header)).join(','),
     ...sorted.map((booking) => {
       const roomName = rooms.find((room) => room.roomId === booking.roomId)?.name ?? booking.roomId;
-      return COLUMNS.map((column) => cell(column.value(booking, roomName))).join(',');
+      return COLUMNS.map((column) => cell(column.value(booking, roomName, facility))).join(',');
     }),
   ];
   // CRLF ตามมาตรฐาน CSV และ Excel บน Windows
@@ -50,8 +53,8 @@ export function bookingsToCsv(bookings: DemoBooking[], rooms: DemoRoom[]): strin
 }
 
 /** ดาวน์โหลดเป็นไฟล์ — ใส่ BOM ไว้หน้าไฟล์ ไม่งั้น Excel เปิดภาษาไทยเป็นตัวอักษรเพี้ยน */
-export function downloadBookingsCsv(bookings: DemoBooking[], rooms: DemoRoom[], fileLabel: string): void {
-  const blob = new Blob(['﻿', bookingsToCsv(bookings, rooms)], { type: 'text/csv;charset=utf-8' });
+export function downloadBookingsCsv(bookings: DemoBooking[], rooms: DemoRoom[], fileLabel: string, lookups: readonly LookupItem[] = []): void {
+  const blob = new Blob(['﻿', bookingsToCsv(bookings, rooms, lookups)], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

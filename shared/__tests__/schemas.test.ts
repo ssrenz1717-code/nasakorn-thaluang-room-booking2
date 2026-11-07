@@ -71,6 +71,7 @@ describe('ตรวจข้อมูลห้องประชุม', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value).toEqual({
+        roomId: '',
         code: 'MR-01',
         name: 'ห้องประชุมใหญ่',
         description: '',

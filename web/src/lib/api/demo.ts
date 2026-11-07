@@ -22,6 +22,10 @@ import { activeAnnouncements, validateAnnouncementInput, type Announcement } fro
 import { canSeeAllBookings, decideApprovalStep, type ApprovalEntry } from '@shared/domain/approval';
 import { COLLEGE_ROOMS, OPEN_LOCATION_ROOM_CODE, isOpenLocationRoom } from '@shared/schemas/room';
 import { validateDecideBookingInput } from '@shared/schemas/booking';
+import { validateRoomInput } from '@shared/schemas/room';
+import {
+  defaultLookups, newLookupKey, sortLookups, unknownLookupKeys, validateLookupInput, type LookupItem,
+} from '@shared/schemas/lookup';
 import {
   COLLEGE_ACCOUNTS, PIN_LOCK_MINUTES, PIN_MAX_FAILURES, canUseRoom, constantTimeEqual, lastAdminProblem,
   PIN_LOGIN_FAILURE_LIMIT_PER_HOUR, PIN_TAKEN_MESSAGE, normalizeUsername, passwordDigestMessage, pinDigestMessage,
@@ -66,6 +70,8 @@ export interface DemoBooking {
   /** ขั้นที่รออนุมัติ 1–3 (0 = ไม่ได้รอ) */
   approvalStep?: number;
   approvalLog?: ApprovalEntry[];
+  /** ประเภทการประชุม (รหัสจาก Lookups) */
+  meetingType?: string;
   /** เวลาที่ยื่นคำขอ (ISO) — พิมพ์เป็น "เขียนวันที่" ในแบบฟอร์ม */
   createdAt?: string;
 }
@@ -86,6 +92,8 @@ interface DemoState {
   rooms: DemoRoom[];
   bookings: DemoBooking[];
   announcements: Announcement[];
+  /** รวมรายการที่ลบไปแล้ว (archived) — การจองเก่ายังต้องอ่านชื่อได้ */
+  lookups: (LookupItem & { archived?: boolean })[];
   dataVersion: number;
 }
 
@@ -135,6 +143,7 @@ async function seedUsers(): Promise<DemoUser[]> {
     const account = COLLEGE_ACCOUNTS.find((item) => item.username === login.username);
     return {
       email: login.username, displayName: login.displayName, department: account?.department ?? 'แผนกวิชาการบัญชี',
+      position: login.username === 'teacher' ? 'ครู' : '',
       role: login.role, status: 'active' as const, allowedRoomIds: [],
       tokenVersion: 1, lastLoginAt: '', createdAt: now, ...(await demoCredential(login.username, login.pin)),
       ...(await demoPasswordCredential(login.username, login.password)),
@@ -144,7 +153,7 @@ async function seedUsers(): Promise<DemoUser[]> {
 
 function sessionView(user: DemoUser): SessionUser {
   const { email, displayName, department, role, status, allowedRoomIds } = user;
-  return { email, displayName, department, role, status, allowedRoomIds: [...allowedRoomIds] };
+  return { email, displayName, department, position: user.position ?? '', role, status, allowedRoomIds: [...allowedRoomIds] };
 }
 
 function adminView(user: DemoUser): AdminUser {
@@ -259,10 +268,15 @@ async function loadState(): Promise<DemoState> {
   const saved = readLocal(LOCAL_STORAGE_KEY);
   if (saved === null) return state;
   try {
-    const parsed = JSON.parse(saved) as { users?: unknown; bookings?: unknown; announcements?: unknown; dataVersion?: unknown };
+    const parsed = JSON.parse(saved) as {
+      users?: unknown; bookings?: unknown; announcements?: unknown; rooms?: unknown; lookups?: unknown; dataVersion?: unknown;
+    };
     if (Array.isArray(parsed.users) && parsed.users.length > 0) state.users = parsed.users as DemoUser[];
     if (Array.isArray(parsed.bookings)) state.bookings = parsed.bookings as DemoBooking[];
     if (Array.isArray(parsed.announcements)) state.announcements = parsed.announcements as Announcement[];
+    // ข้อมูลที่บันทึกก่อนมีหน้าตั้งค่าข้อมูลไม่มีสองอย่างนี้ — ใช้ชุดเริ่มต้นแทน
+    if (Array.isArray(parsed.rooms) && parsed.rooms.length > 0) state.rooms = parsed.rooms as DemoRoom[];
+    if (Array.isArray(parsed.lookups) && parsed.lookups.length > 0) state.lookups = parsed.lookups as DemoState['lookups'];
     if (typeof parsed.dataVersion === 'number') state.dataVersion = parsed.dataVersion;
   } catch {
     // ข้อมูลที่เก็บไว้เสีย ใช้ข้อมูลตั้งต้นแทน ดีกว่าเปิดเว็บไม่ขึ้น
@@ -273,7 +287,10 @@ async function loadState(): Promise<DemoState> {
 function saveState(state: DemoState): void {
   writeLocal(
     LOCAL_STORAGE_KEY,
-    JSON.stringify({ users: state.users, bookings: state.bookings, announcements: state.announcements, dataVersion: state.dataVersion }),
+    JSON.stringify({
+      users: state.users, bookings: state.bookings, announcements: state.announcements,
+      rooms: state.rooms, lookups: state.lookups, dataVersion: state.dataVersion,
+    }),
   );
 }
 
@@ -284,6 +301,7 @@ function createState(users: DemoUser[]): DemoState {
     rooms: seedRooms(),
     bookings: seedBookings(),
     announcements: seedAnnouncements(),
+    lookups: defaultLookups(),
     dataVersion: 1,
   };
 }
@@ -357,6 +375,11 @@ export function createDemoTransport(): Transport {
     return parsed.issues.map((issue) => issue.message).join(' · ');
   }
 
+  /** รายการที่ยังไม่ถูกลบ (เหมือน readLookups_ ฝั่ง Apps Script) */
+  function liveLookups(): LookupItem[] {
+    return state.lookups.filter((item) => !item.archived);
+  }
+
   function changed(): void {
     state.dataVersion += 1;
     saveState(state);
@@ -410,7 +433,7 @@ export function createDemoTransport(): Transport {
       }
       if (await findByPin(input.pin)) throw new ApiError('CONFLICT', PIN_TAKEN_MESSAGE);
       const user: DemoUser = {
-        email: input.username, displayName: input.displayName, department: input.department, role: input.role,
+        email: input.username, displayName: input.displayName, department: input.department, position: input.position, role: input.role,
         status: input.status, allowedRoomIds: input.allowedRoomIds, tokenVersion: 1, lastLoginAt: '',
         createdAt: new Date().toISOString(), ...(await demoCredential(input.username, input.pin)),
         ...(await demoPasswordCredential(input.username, input.password)),
@@ -431,7 +454,7 @@ export function createDemoTransport(): Transport {
       const problem = lastAdminProblem(state.users.map((item) => ({ ...item, username: item.email })), input.username, input);
       if (problem !== null) throw new ApiError('CONFLICT', problem);
       Object.assign(user, {
-        displayName: input.displayName, department: input.department, role: input.role,
+        displayName: input.displayName, department: input.department, position: input.position, role: input.role,
         status: input.status, allowedRoomIds: input.allowedRoomIds,
       });
       changed();
@@ -506,6 +529,12 @@ export function createDemoTransport(): Transport {
       if (!parsed.ok) throw new ApiError('VALIDATION', parsed.issues.map((issue) => issue.message).join(' · '), parsed.issues);
       const input = parsed.value;
       if (!input.termsAccepted) throw new ApiError('VALIDATION', 'กรุณายอมรับเงื่อนไขการใช้ห้องประชุม');
+      if (unknownLookupKeys(liveLookups(), 'facility', input.requestedFacilities).length > 0) {
+        throw new ApiError('VALIDATION', 'มีอุปกรณ์ที่ถูกปิดใช้ไปแล้ว กรุณาเลือกใหม่');
+      }
+      if (input.meetingType !== '' && unknownLookupKeys(liveLookups(), 'meetingType', [input.meetingType]).length > 0) {
+        throw new ApiError('VALIDATION', 'ประเภทการประชุมนี้ถูกปิดใช้ไปแล้ว กรุณาเลือกใหม่');
+      }
       const room = state.rooms.find((item) => item.roomId === input.roomId);
       if (!room) throw new ApiError('NOT_FOUND', 'ไม่พบห้องประชุม');
       if (!canUseRoom(user, room.roomId)) throw new ApiError('FORBIDDEN', 'บัญชีของคุณยังไม่ได้รับสิทธิ์จองห้องนี้ กรุณาติดต่อผู้ดูแลระบบ');
@@ -590,6 +619,69 @@ export function createDemoTransport(): Transport {
       if (!found) throw new ApiError('NOT_FOUND', 'ไม่พบประกาศ');
       found.archivedAt = new Date().toISOString();
       state.dataVersion += 1; saveState(state);
+      return { ok: true };
+    },
+
+    lookups: (_payload, token) => {
+      userFromToken(token);
+      return { lookups: sortLookups(liveLookups()) };
+    },
+    saveLookup: (payload: unknown, token) => {
+      requireAdmin(token);
+      const parsed = validateLookupInput(payload);
+      if (!parsed.ok) throw new ApiError('VALIDATION', issues(parsed), parsed.issues);
+      const input = parsed.value;
+      if (liveLookups().some((item) => item.kind === input.kind && item.lookupId !== input.lookupId && item.label === input.label)) {
+        throw new ApiError('CONFLICT', `มี "${input.label}" อยู่แล้ว`);
+      }
+      const fields = { label: input.label, note: input.note, sortOrder: input.sortOrder, active: input.active };
+      if (input.lookupId === '') {
+        const created = {
+          lookupId: `demo-lk-${Date.now()}`, kind: input.kind, key: newLookupKey(input.kind, state.lookups, Date.now()), ...fields,
+        };
+        state.lookups.push(created); changed();
+        return { lookup: created };
+      }
+      const found = liveLookups().find((item) => item.lookupId === input.lookupId && item.kind === input.kind);
+      if (!found) throw new ApiError('NOT_FOUND', 'ไม่พบรายการ');
+      Object.assign(found, fields); changed();
+      return { lookup: found };
+    },
+    archiveLookup: (payload: { lookupId?: string }, token) => {
+      requireAdmin(token);
+      const found = liveLookups().find((item) => item.lookupId === payload?.lookupId);
+      if (!found) throw new ApiError('NOT_FOUND', 'ไม่พบรายการ');
+      Object.assign(found, { archived: true, active: false }); changed();
+      return { ok: true };
+    },
+    saveRoom: (payload: unknown, token) => {
+      requireAdmin(token);
+      const parsed = validateRoomInput(payload);
+      if (!parsed.ok) throw new ApiError('VALIDATION', issues(parsed), parsed.issues);
+      const { roomId, ...fields } = parsed.value;
+      if (unknownLookupKeys(liveLookups(), 'roomEquipment', fields.equipment).length > 0) {
+        throw new ApiError('VALIDATION', 'มีอุปกรณ์ที่ถูกปิดใช้หรือลบไปแล้ว กรุณาเลือกใหม่');
+      }
+      if (state.rooms.some((room) => room.code.toUpperCase() === fields.code.toUpperCase() && room.roomId !== roomId)) {
+        throw new ApiError('CONFLICT', `รหัสห้อง ${fields.code} มีอยู่แล้ว`);
+      }
+      if (roomId === '') {
+        const room: DemoRoom = { roomId: `demo-room-${Date.now()}`, ...fields };
+        state.rooms.push(room); changed();
+        return { room };
+      }
+      const found = state.rooms.find((room) => room.roomId === roomId);
+      if (!found) throw new ApiError('NOT_FOUND', 'ไม่พบห้องประชุม');
+      Object.assign(found, fields); changed();
+      return { room: found };
+    },
+    deleteRoom: (payload: { roomId?: string }, token) => {
+      requireAdmin(token);
+      if (!state.rooms.some((room) => room.roomId === payload?.roomId)) throw new ApiError('NOT_FOUND', 'ไม่พบห้องประชุม');
+      if (state.bookings.some((booking) => booking.roomId === payload?.roomId)) {
+        throw new ApiError('CONFLICT', 'ห้องนี้มีประวัติการจองแล้ว ลบไม่ได้ — เปลี่ยนสถานะเป็น "ไม่เปิดให้จอง" แทน ประวัติจะยังอยู่ครบ');
+      }
+      state.rooms = state.rooms.filter((room) => room.roomId !== payload?.roomId); changed();
       return { ok: true };
     },
   };

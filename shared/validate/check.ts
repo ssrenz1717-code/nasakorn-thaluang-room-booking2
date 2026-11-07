@@ -169,6 +169,21 @@ export class Check {
     return picked;
   }
 
+  /**
+   * รายการรหัสจากข้อมูลที่ผู้ดูแลแก้ได้ (Lookups) — ตรวจแค่รูปแบบที่นี่
+   * ว่ารหัสยังเปิดใช้อยู่หรือไม่ ฝั่ง server ตรวจกับรายการจริงอีกชั้น (unknownLookupKeys)
+   */
+  keys(field: string, raw: unknown, options: { label: string; max?: number }): string[] {
+    if (raw === undefined || raw === null) return [];
+    if (!Array.isArray(raw) || raw.some((item) => typeof item !== 'string' || !/^[A-Za-z0-9_-]{1,40}$/.test(item))) {
+      this.fail(field, `${options.label}มีค่าที่ไม่รู้จัก`);
+      return [];
+    }
+    const picked = [...new Set(raw as string[])];
+    if (picked.length > (options.max ?? 30)) this.fail(field, `${options.label}เลือกได้ไม่เกิน ${options.max ?? 30} รายการ`);
+    return picked;
+  }
+
   /** URL หรือ null — ใช้กับรูปภาพห้องที่ไม่บังคับ */
   urlOrNull(field: string, raw: unknown, options: { label: string }): string | null {
     if (raw === undefined || raw === null || raw === '') return null;

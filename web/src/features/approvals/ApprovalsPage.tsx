@@ -4,7 +4,7 @@ import { useLiveRefresh } from '../../lib/hooks/useLiveRefresh';
 import { Link } from 'react-router-dom';
 import { Check, ClipboardCheck, FileText, KeyRound, Printer, X } from 'lucide-react';
 import { APPROVAL_STEPS, currentApprovalStep, isAwaitingRole, stepForRole } from '@shared/domain/approval';
-import { REQUEST_FACILITY_LABEL_TH, type RequestFacility } from '@shared/schemas/booking';
+import { useLookups } from '../../lib/hooks/useLookups';
 import { isOpenLocationRoom } from '@shared/schemas/room';
 import { PIN_LENGTH, USER_ROLE_LABEL_TH } from '@shared/schemas/user';
 import { Dialog } from '../../components/ui/Dialog';
@@ -160,11 +160,12 @@ export function ApprovalsPage() {
 
 function RequestCard({ booking, rooms, compact = false, children }: { booking: DemoBooking; rooms: DemoRoom[]; compact?: boolean; children?: React.ReactNode }) {
   const room = rooms.find((item) => item.roomId === booking.roomId);
+  const lookups = useLookups();
   const [formOpen, setFormOpen] = useState(false);
   const closeForm = useCallback(() => setFormOpen(false), []);
   const place = isOpenLocationRoom(room) ? `${booking.customLocation || 'สถานที่อื่น'} (ระบุเอง)` : room?.name ?? 'ห้องประชุม';
   const facilities = [
-    ...(booking.requestedFacilities ?? []).map((key) => REQUEST_FACILITY_LABEL_TH[key as RequestFacility] ?? key),
+    ...(booking.requestedFacilities ?? []).map((key) => lookups.label('facility', key)),
     ...((booking.extraFurnitureCount ?? 0) > 0 ? [`โต๊ะ/เก้าอี้เพิ่ม ${booking.extraFurnitureCount} ตัว`] : []),
     ...(booking.otherFacility ? [booking.otherFacility] : []),
   ];

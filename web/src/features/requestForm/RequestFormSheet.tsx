@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { APPROVAL_STEPS, type ApprovalEntry } from '@shared/domain/approval';
-import { REQUEST_FACILITIES, REQUEST_FACILITY_LABEL_TH, type RequestFacility } from '@shared/schemas/booking';
+import { REQUEST_FACILITIES, REQUEST_FACILITY_LABEL_TH } from '@shared/schemas/booking';
+import { useLookups } from '../../lib/hooks/useLookups';
 import { COLLEGE_ROOMS, OPEN_LOCATION_ROOM_CODE } from '@shared/schemas/room';
 import { cn } from '../../lib/cn';
 
@@ -58,6 +59,13 @@ export function RequestFormSheet({ data, roomCode, roomName, className }: {
   const known = COLLEGE_ROOMS.some((room) => room.code === roomCode && room.code !== OPEN_LOCATION_ROOM_CODE);
   const otherPlace = roomCode === OPEN_LOCATION_ROOM_CODE ? data.customLocation ?? '' : known ? '' : roomName ?? '';
   const facilities = new Set(data.requestedFacilities ?? []);
+  const lookups = useLookups();
+  // แบบฟอร์มกระดาษมีช่องให้ติ๊ก 5 อย่าง — อุปกรณ์ที่ผู้ดูแลเพิ่มภายหลังเขียนรวมในช่อง "อื่น ๆ"
+  const printedKeys: readonly string[] = REQUEST_FACILITIES;
+  const otherFacilities = [
+    ...[...facilities].filter((key) => !printedKeys.includes(key)).map((key) => lookups.label('facility', key)),
+    ...(data.otherFacility ? [data.otherFacility] : []),
+  ].join(', ');
   const extra = data.extraFurnitureCount ?? 0;
   const signed = (step: number) => data.approvalLog?.find((entry) => entry.step === step);
   const dateParts = (
@@ -106,13 +114,13 @@ export function RequestFormSheet({ data, roomCode, roomName, className }: {
       <p className="font-bold">ครุภัณฑ์/อุปกรณ์/สิ่งอำนวยความสะดวกที่ขอใช้</p>
       <p className="flex flex-wrap gap-x-[4.5mm]">
         {REQUEST_FACILITIES.map((key) => (
-          <span key={key}><Box checked={facilities.has(key)} /> {REQUEST_FACILITY_LABEL_TH[key as RequestFacility]}</span>
+          <span key={key}><Box checked={facilities.has(key)} /> {REQUEST_FACILITY_LABEL_TH[key]}</span>
         ))}
       </p>
       <Line>
         <Box checked={extra > 0} />&nbsp;โต๊ะ/เก้าอี้เพิ่มเติม <Fill w="20mm" center>{extra > 0 ? String(extra) : ''}</Fill> ตัว
         <span className="w-[10mm]" />
-        <Box checked={Boolean(data.otherFacility)} />&nbsp;อื่น ๆ <Fill grow>{data.otherFacility}</Fill>
+        <Box checked={otherFacilities !== ''} />&nbsp;อื่น ๆ <Fill grow>{otherFacilities}</Fill>
       </Line>
       <p>ข้าพเจ้าขอรับรองว่าจะดูแลรักษาทรัพย์สินของทางราชการ และปฏิบัติตามระเบียบของวิทยาลัยโดยเคร่งครัด</p>
 

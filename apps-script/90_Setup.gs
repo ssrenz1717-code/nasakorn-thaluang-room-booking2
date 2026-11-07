@@ -44,6 +44,9 @@ function setupSystem() {
   // 3.1) ห้องประชุมของวิทยาลัย (เฉพาะตอนชีต Rooms ยังว่าง)
   log.push(seedRooms());
 
+  // 3.2) รายการตั้งต้น: อุปกรณ์ ประเภทการประชุม แผนก ตำแหน่ง (เฉพาะชนิดที่ยังไม่มี)
+  log.push(seedLookups());
+
   // 4) ค่าตั้งค่าเริ่มต้น (เขียนเฉพาะตอนชีตว่าง จะไม่ทับค่าที่ผู้ดูแลแก้ไว้)
   const settingsSheet = getSheet_(Domain.SHEET_SETTINGS);
   if (settingsSheet.getLastRow() < 2) {

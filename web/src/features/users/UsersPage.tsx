@@ -17,6 +17,7 @@ import { Dialog } from '../../components/ui/Dialog';
 import { ErrorState, LoadingState } from '../../components/ui/States';
 import { useToast } from '../../components/ui/Toast';
 import { cn } from '../../lib/cn';
+import { useLookups } from '../../lib/hooks/useLookups';
 
 const inputClass = 'min-h-11 w-full rounded-control border border-line bg-surface px-3 text-[15px] text-ink outline-none transition-colors duration-150 focus:border-brand focus:ring-2 focus:ring-brand/20 disabled:bg-surface-sunken disabled:text-ink-muted';
 const labelClass = 'mb-1.5 block text-sm font-medium text-ink';
@@ -170,7 +171,7 @@ export function UsersPage() {
                       {user.email === me.email && <Badge>คุณ</Badge>}
                     </div>
                     <p className="mt-0.5 text-sm text-ink-muted">
-                      {user.email}{user.department ? ` · ${user.department}` : ''}
+                      {[user.email, user.position, user.department].filter(Boolean).join(' · ')}
                     </p>
                     <p className="mt-0.5 text-xs text-ink-subtle">
                       {user.role === 'admin' || user.allowedRoomIds.length === 0
@@ -212,6 +213,8 @@ function UserFormDialog({
   const [username, setUsername] = useState(user?.email ?? '');
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [department, setDepartment] = useState(user?.department ?? '');
+  const [position, setPosition] = useState(user?.position ?? '');
+  const lookups = useLookups();
   const [role, setRole] = useState<UserRole>(user?.role ?? 'staff');
   const [active, setActive] = useState((user?.status ?? 'active') === 'active');
   const [limitRooms, setLimitRooms] = useState((user?.allowedRoomIds.length ?? 0) > 0);
@@ -226,7 +229,7 @@ function UserFormDialog({
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const input = {
-      username, displayName, department, role, status: active ? 'active' : 'disabled',
+      username, displayName, department, position, role, status: active ? 'active' : 'disabled',
       allowedRoomIds: limitRooms && role !== 'admin' ? roomIds : [], pin, password,
     } as const;
     if (limitRooms && role !== 'admin' && roomIds.length === 0) { setError('เลือกห้องอย่างน้อย 1 ห้อง หรือเลือก "ทุกห้อง"'); return; }
@@ -272,9 +275,17 @@ function UserFormDialog({
           </div>
         </div>
 
-        <div>
-          <label className={labelClass} htmlFor="uf-dept">หน่วยงาน / ตำแหน่ง <span className="font-normal text-ink-subtle">(ถ้ามี)</span></label>
-          <input id="uf-dept" className={inputClass} value={department} onChange={(event) => setDepartment(event.target.value)} maxLength={100} placeholder="เช่น แผนกวิชาการบัญชี" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className={labelClass} htmlFor="uf-dept">แผนกวิชา / หน่วยงาน <span className="font-normal text-ink-subtle">(ถ้ามี)</span></label>
+            <input id="uf-dept" list="uf-dept-options" className={inputClass} value={department} onChange={(event) => setDepartment(event.target.value)} maxLength={100} placeholder="เลือกหรือพิมพ์" />
+            <datalist id="uf-dept-options">{lookups.active('department').map((item) => <option key={item.lookupId} value={item.label} />)}</datalist>
+          </div>
+          <div>
+            <label className={labelClass} htmlFor="uf-position">ตำแหน่ง <span className="font-normal text-ink-subtle">(ถ้ามี)</span></label>
+            <input id="uf-position" list="uf-position-options" className={inputClass} value={position} onChange={(event) => setPosition(event.target.value)} maxLength={100} placeholder="เลือกหรือพิมพ์" />
+            <datalist id="uf-position-options">{lookups.active('position').map((item) => <option key={item.lookupId} value={item.label} />)}</datalist>
+          </div>
         </div>
 
         {creating && (

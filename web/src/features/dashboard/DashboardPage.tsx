@@ -12,7 +12,7 @@ import {
   Users,
 } from 'lucide-react';
 import { BOOKING_STATUS_LABEL_TH } from '@shared/domain/status';
-import { REQUEST_FACILITY_LABEL_TH, REQUEST_FACILITIES } from '@shared/schemas/booking';
+import { useLookups } from '../../lib/hooks/useLookups';
 import { formatTimeOfDay } from '@shared/time/bangkok';
 import { toDateKey } from '@shared/time/bangkok';
 import { useApp, useCurrentUser, useSettings } from '../../app/providers/AppProvider';
@@ -35,6 +35,7 @@ export function DashboardPage() {
   const { api, isDemo, serverTime, dataVersion, token } = useApp();
   const user = useCurrentUser();
   const settings = useSettings();
+  const lookups = useLookups();
   const isDesktop = useMediaQuery(DESKTOP_QUERY, true);
 
   const [pingState, setPingState] = useState<
@@ -86,7 +87,9 @@ export function DashboardPage() {
   const attendeeTotal=usedBookings.reduce((sum,booking)=>sum+(Number(booking.attendees)||0),0);
   const todayCount=bookings.filter((booking)=>booking.dateKey===today&&['pending','confirmed','completed'].includes(booking.status)).length;
   const roomStats=rooms.map((room)=>({room,count:bookings.filter((booking)=>booking.roomId===room.roomId&&['confirmed','completed'].includes(booking.status)).length})).sort((a,b)=>b.count-a.count);
-  const facilityStats:{key:string;label:string;count:number}[]=[...REQUEST_FACILITIES.map((key)=>({key,label:REQUEST_FACILITY_LABEL_TH[key],count:bookings.filter((booking)=>booking.requestedFacilities?.includes(key)).length})),{key:'extra',label:'โต๊ะ/เก้าอี้เพิ่มเติม',count:bookings.filter((booking)=>(booking.extraFurnitureCount||0)>0).length},{key:'other',label:'อุปกรณ์อื่น ๆ',count:bookings.filter((booking)=>Boolean(booking.otherFacility?.trim())).length}].sort((a,b)=>b.count-a.count);
+  // อุปกรณ์ที่เปิดให้ขอใช้ตอนนี้ + ที่เคยถูกขอแต่ปิดไปแล้ว (ตัวเลขย้อนหลังไม่หาย)
+  const facilityKeys=[...new Set([...lookups.active('facility').map((item)=>item.key),...bookings.flatMap((booking)=>booking.requestedFacilities??[])])];
+  const facilityStats:{key:string;label:string;count:number}[]=[...facilityKeys.map((key)=>({key,label:lookups.label('facility',key),count:bookings.filter((booking)=>booking.requestedFacilities?.includes(key)).length})),{key:'extra',label:'โต๊ะ/เก้าอี้เพิ่มเติม',count:bookings.filter((booking)=>(booking.extraFurnitureCount||0)>0).length},{key:'other',label:'อุปกรณ์อื่น ๆ',count:bookings.filter((booking)=>Boolean(booking.otherFacility?.trim())).length}].sort((a,b)=>b.count-a.count);
   const latest=bookings.slice().sort((a,b)=>b.dateKey.localeCompare(a.dateKey)||b.startMin-a.startMin).slice(0,5);
   const donutColors=['#1686e8','#11ad81','#f59e0b','#8b5cf6','#e84393','#06b6d4','#a855f7','#64748b'];
   const facilityTotal=facilityStats.reduce((sum,item)=>sum+item.count,0);

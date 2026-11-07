@@ -9,6 +9,8 @@ export interface SessionUser {
   email: string;
   displayName: string;
   department: string;
+  /** ตำแหน่ง — ใช้เติมแบบฟอร์มจองให้อัตโนมัติ */
+  position: string;
   role: UserRole;
   status: UserStatus;
   /** ห้องที่จองได้ — ว่าง = ทุกห้อง */

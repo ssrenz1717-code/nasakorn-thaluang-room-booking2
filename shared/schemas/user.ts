@@ -157,6 +157,8 @@ export interface UserAccountInput {
   username: string;
   displayName: string;
   department: string;
+  /** ตำแหน่ง เช่น ครู หัวหน้าแผนกวิชา — เติมให้อัตโนมัติในแบบฟอร์มจอง */
+  position: string;
   role: UserRole;
   status: UserStatus;
   allowedRoomIds: string[];
@@ -194,6 +196,7 @@ export function validateUserAccountInput(
     username,
     displayName: check.string('displayName', input.displayName, { label: 'ชื่อ-นามสกุล', min: 1, max: 100 }),
     department: check.string('department', input.department, { label: 'หน่วยงาน', max: 100, fallback: '' }),
+    position: check.string('position', input.position, { label: 'ตำแหน่ง', max: 100, fallback: '' }),
     role: check.oneOf('role', input.role, USER_ROLES, { label: 'สิทธิ์การใช้งาน' }),
     status: check.oneOf('status', input.status, USER_STATUSES, { label: 'สถานะผู้ใช้', fallback: 'active' }),
     allowedRoomIds: roomIdList(check, input.allowedRoomIds),

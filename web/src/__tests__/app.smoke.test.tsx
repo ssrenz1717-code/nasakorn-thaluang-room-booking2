@@ -642,3 +642,59 @@ describe('ปฏิทินแสดงเฉพาะรายการที�
   });
 });
 
+
+describe('ตั้งค่าข้อมูล: ผู้ดูแลแก้ห้องและรายการตั้งต้นเองได้', () => {
+  it('เพิ่มห้องใหม่แล้วห้องนั้นขึ้นในหน้าจอง ห้องที่มีการจองแล้วลบไม่ได้', async () => {
+    const { user, nav } = await openApp();
+    await goTo(user, nav, 'ตั้งค่าข้อมูล');
+    await user.click(await screen.findByRole('button', { name: 'เพิ่มห้อง' }));
+    const dialog = await screen.findByRole('dialog', { name: 'เพิ่มห้องประชุม' });
+    await user.type(within(dialog).getByLabelText('รหัสห้อง'), 'r09');
+    await user.type(within(dialog).getByLabelText('ชื่อห้อง'), 'ห้องประชุมอาคาร 9');
+    await user.click(within(dialog).getByLabelText('ไวท์บอร์ด'));
+    await user.click(within(dialog).getByRole('button', { name: 'บันทึก' }));
+    expect(await screen.findByText('ห้องประชุมอาคาร 9', {}, { timeout: 3000 })).toBeDefined();
+
+    // หอประชุมมีการจองตัวอย่างอยู่ — ระบบต้องไม่ให้ลบ เพื่อไม่ให้ประวัติหาย
+    await user.click(screen.getByRole('button', { name: 'ลบ หอประชุมอดิเรกสาร' }));
+    const confirm = await screen.findByRole('dialog', { name: /ลบ หอประชุมอดิเรกสาร/ });
+    await user.click(within(confirm).getByRole('button', { name: 'ลบห้อง' }));
+    expect(await within(confirm).findByText(/มีประวัติการจองแล้ว ลบไม่ได้/, {}, { timeout: 3000 })).toBeDefined();
+    await user.click(within(confirm).getByRole('button', { name: 'ยกเลิก' }));
+
+    await goTo(user, nav, 'จองห้องประชุม');
+    expect(await screen.findByText('ห้องประชุมอาคาร 9', {}, { timeout: 3000 })).toBeDefined();
+  });
+
+  it('เพิ่มอุปกรณ์ที่ขอใช้ได้ ปิดรายการเดิม แล้วแบบฟอร์มจองเปลี่ยนตามทันที', async () => {
+    const { user, nav } = await openApp();
+    await goTo(user, nav, 'ตั้งค่าข้อมูล');
+    await user.click(screen.getByRole('tab', { name: 'อุปกรณ์ที่ขอใช้ได้' }));
+    await user.type(screen.getByLabelText('เพิ่มอุปกรณ์ที่ขอใช้ได้'), 'จอ LED');
+    await user.click(screen.getByRole('button', { name: 'เพิ่ม' }));
+    expect(await screen.findByText('จอ LED', {}, { timeout: 3000 })).toBeDefined();
+    const internet = screen.getByText('อินเทอร์เน็ต').closest('li')!;
+    await user.click(within(internet).getByRole('switch'));
+    await waitFor(() => expect(within(internet).getByText('ปิดไว้')).toBeDefined(), { timeout: 3000 });
+
+    await goTo(user, nav, 'จองห้องประชุม');
+    const facilities = await screen.findByRole('group', { name: 'ครุภัณฑ์/อุปกรณ์/สิ่งอำนวยความสะดวกที่ขอใช้' });
+    expect(within(facilities).getByText('จอ LED')).toBeDefined();
+    expect(within(facilities).queryByText('อินเทอร์เน็ต')).toBeNull();
+  });
+
+  it('แบบฟอร์มจองเติมตำแหน่งกับแผนกจากบัญชีให้เอง และมีช่องประเภทการประชุม', async () => {
+    const { user, nav } = await openApp('teacher');
+    await goTo(user, nav, 'จองห้องประชุม');
+    expect((await screen.findByLabelText('ตำแหน่ง') as HTMLInputElement).value).toBe('ครู');
+    expect((screen.getByLabelText('หน่วยงาน / สาขาวิชา') as HTMLInputElement).value).not.toBe('');
+    expect(screen.getByLabelText(/ประเภทการประชุม/)).toBeDefined();
+  });
+
+  it('พนักงานเข้าหน้าตั้งค่าข้อมูลไม่ได้', async () => {
+    const { nav } = await openApp('teacher');
+    expect(within(nav).queryByRole('link', { name: 'ตั้งค่าข้อมูล' })).toBeNull();
+    window.location.hash = '#/manage';
+    await waitFor(() => expect(screen.queryByRole('heading', { level: 1, name: 'ตั้งค่าข้อมูล' })).toBeNull());
+  });
+});

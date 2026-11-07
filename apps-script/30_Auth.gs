@@ -217,6 +217,7 @@ function publicUser_(user) {
     email: String(user.username),
     displayName: String(user.displayName || user.username),
     department: String(user.department || ''),
+    position: String(user.position || ''),
     role: Domain.normalizeUserRole(user.role),
     status: String(user.status || 'active'),
     allowedRoomIds: Domain.readList(user, 'allowedRoomIds'),

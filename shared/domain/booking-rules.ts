@@ -177,7 +177,7 @@ export function validateBookingRules(
   if (missing.length > 0) {
     issues.push({
       code: 'EQUIPMENT_UNAVAILABLE',
-      message: `ห้องนี้ไม่มี ${missing.map((item) => ROOM_EQUIPMENT_LABEL_TH[item]).join(', ')}`,
+      message: `ห้องนี้ไม่มี ${missing.map((item) => (ROOM_EQUIPMENT_LABEL_TH as Record<string, string>)[item] ?? item).join(', ')}`,
       field: 'equipment',
     });
   }

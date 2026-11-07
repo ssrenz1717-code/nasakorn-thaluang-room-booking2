@@ -29,6 +29,7 @@ function publicBooking_(row) {
     extraFurnitureCount: Number(row.extraFurnitureCount) || 0, otherFacility: String(row.otherFacility || ''),
     termsAccepted: String(row.termsAccepted) === 'true',
     customLocation: String(row.customLocation || ''),
+    meetingType: String(row.meetingType || ''),
     createdAt: String(row.createdAt || ''),
     approvalStep: Domain.currentApprovalStep({ status: String(row.status), approvalStep: row.approvalStep }),
     approvalLog: Domain.parseApprovalLog(row.approvalLog),
@@ -64,6 +65,13 @@ function createBooking_(user, raw) {
   if (!parsed.ok) throw appError_(ERROR_CODES.VALIDATION, 'ข้อมูลการจองไม่ถูกต้อง', parsed.issues);
   const input = parsed.value;
   if (!input.termsAccepted) throw appError_(ERROR_CODES.VALIDATION, 'กรุณายอมรับเงื่อนไขการใช้ห้องประชุม');
+  const lookups = readLookups_();
+  if (Domain.unknownLookupKeys(lookups, 'facility', input.requestedFacilities).length > 0) {
+    throw appError_(ERROR_CODES.VALIDATION, 'มีอุปกรณ์ที่ถูกปิดใช้ไปแล้ว กรุณาเลือกใหม่');
+  }
+  if (input.meetingType !== '' && Domain.unknownLookupKeys(lookups, 'meetingType', [input.meetingType]).length > 0) {
+    throw appError_(ERROR_CODES.VALIDATION, 'ประเภทการประชุมนี้ถูกปิดใช้ไปแล้ว กรุณาเลือกใหม่');
+  }
   return withScriptLock_(function () {
     const roomRow = findByKey_(Domain.SHEET_ROOMS, input.roomId);
     if (!roomRow) throw appError_(ERROR_CODES.NOT_FOUND, 'ไม่พบห้องประชุม');
@@ -102,7 +110,7 @@ function createBooking_(user, raw) {
       department: input.department || user.department, attendees: input.attendees,
       equipment: Domain.writeList(input.equipment), note: input.note,
       requesterPosition: input.requesterPosition, requesterPhone: input.requesterPhone,
-      requestedFacilities: Domain.writeList(input.requestedFacilities),
+      requestedFacilities: Domain.writeList(input.requestedFacilities), meetingType: input.meetingType,
       extraFurnitureCount: input.extraFurnitureCount, otherFacility: input.otherFacility,
       termsAccepted: input.termsAccepted, termsAcceptedAt: input.termsAccepted ? now : '',
       durationMin: input.endMin - input.startMin,

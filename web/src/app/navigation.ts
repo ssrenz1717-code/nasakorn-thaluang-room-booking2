@@ -4,6 +4,7 @@ import {
   ClipboardList,
   ClipboardCheck,
   DoorOpen,
+  Settings2,
   LayoutDashboard,
   UsersRound,
 } from 'lucide-react';
@@ -29,6 +30,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/approvals', label: 'อนุมัติการใช้ห้อง', icon: ClipboardCheck, roles: ['admin', 'inspector', 'endorser', 'director'] },
   { path: '/reports', label: 'พิมพ์แบบฟอร์ม A4', icon: ClipboardList },
   { path: '/users', label: 'จัดการผู้ใช้', icon: UsersRound, roles: ['admin'] },
+  { path: '/manage', label: 'ตั้งค่าข้อมูล', icon: Settings2, roles: ['admin'] },
 ];
 
 export function visibleNavItems(role: UserRole): NavItem[] {

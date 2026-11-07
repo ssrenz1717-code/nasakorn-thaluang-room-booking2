@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AirVent, CalendarDays, Check, Clock3, DoorOpen, FileText, MapPin, Mic, Projector, Send, Users, Volume2, Wifi, type LucideIcon,
+  AirVent, CalendarDays, Check, Clock3, DoorOpen, FileText, MapPin, Mic, Package, Projector, Send, Users, Volume2, Wifi, type LucideIcon,
 } from 'lucide-react';
 import { businessWindow } from '@shared/domain/booking-rules';
 import { conflictingSlots, isEndBlocked, isStartBlocked } from '@shared/domain/availability';
 import { addDaysToDateKey, dayOfWeekOfDateKey, toDateKey, toMinutesOfDay } from '@shared/time/bangkok';
-import { ROOM_EQUIPMENT_LABEL_TH, isOpenLocationRoom } from '@shared/schemas/room';
-import { REQUEST_FACILITIES, REQUEST_FACILITY_LABEL_TH, type RequestFacility } from '@shared/schemas/booking';
+import { isOpenLocationRoom } from '@shared/schemas/room';
+import type { RequestFacility } from '@shared/schemas/booking';
+import { useLookups } from '../../lib/hooks/useLookups';
 import type { SystemSettings } from '@shared/schemas/settings';
 import { useApp, useCurrentUser } from '../../app/providers/AppProvider';
 import { PageHeader } from '../../components/layout/PageHeader';
@@ -26,7 +27,8 @@ import { adjustEndTime, asMinute, endTimeOptions, firstFreeStart, startTimeOptio
 const inputClass = 'min-h-11 w-full rounded-control border border-line bg-surface px-3 text-[15px] text-ink outline-none transition-colors duration-150 focus:border-brand focus:ring-2 focus:ring-brand/20';
 const labelClass = 'mb-1.5 block text-sm font-medium text-ink';
 
-const FACILITY_ICON: Record<RequestFacility, LucideIcon> = {
+/** ไอคอนของอุปกรณ์ชุดเริ่มต้น — รายการที่ผู้ดูแลเพิ่มเองใช้ไอคอนกล่อง */
+const FACILITY_ICON: Record<string, LucideIcon> = {
   projector: Projector,
   soundSystem: Volume2,
   microphone: Mic,
@@ -89,7 +91,10 @@ export function BookingPage() {
   const [bookerName, setBookerName] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
   const closePreview = useCallback(() => setPreviewOpen(false), []);
-  const [position, setPosition] = useState('');
+  const lookups = useLookups();
+  // ตำแหน่งและหน่วยงานเติมจากบัญชีผู้ใช้ — แก้ได้ถ้าจองแทนคนอื่น
+  const [position, setPosition] = useState(user.position);
+  const [meetingType, setMeetingType] = useState('');
   const [department, setDepartment] = useState(user.department);
   const [phone, setPhone] = useState('');
   const [title, setTitle] = useState('');
@@ -167,7 +172,7 @@ export function BookingPage() {
   const formData = {
     bookerName: fullName, requesterPosition: position, department, requesterPhone: phone, roomId,
     customLocation: openLocation ? customLocation : '', title, dateKey, startMin, endMin, attendees: attendeeCount,
-    requestedFacilities, extraFurnitureCount: Number(extraFurnitureCount) || 0, otherFacility,
+    requestedFacilities, extraFurnitureCount: Number(extraFurnitureCount) || 0, otherFacility, meetingType,
   };
 
   const submit = async (event: FormEvent) => {
@@ -178,7 +183,7 @@ export function BookingPage() {
       await api.createBooking(token, {
         bookerName: fullName, title, roomId, dateKey, startMin, endMin, attendees: attendeeCount,
         department, requesterPosition: position, requesterPhone: phone, note, equipment: [], customLocation: openLocation ? customLocation : '',
-        requestedFacilities, extraFurnitureCount: Number(extraFurnitureCount), otherFacility, termsAccepted,
+        requestedFacilities, extraFurnitureCount: Number(extraFurnitureCount), otherFacility, termsAccepted, meetingType,
       });
       nav('/my-bookings', { state: { success: 'ส่งคำขอจองเรียบร้อยแล้ว' } });
     } catch (e) {
@@ -221,7 +226,7 @@ export function BookingPage() {
                     </span>
                     <span className="mt-auto flex items-center gap-1.5 px-3.5 pb-3 text-xs text-ink-muted">
                       {isOpenLocationRoom(item) ? <><MapPin className="size-3.5 shrink-0" aria-hidden="true" /><span>พิมพ์สถานที่ที่ต้องการเอง</span></> : <><Users className="size-3.5 shrink-0" aria-hidden="true" /><span className="shrink-0">รองรับประมาณ {item.capacity} คน</span></>}
-                      {item.equipment.length > 0 && <span className="min-w-0 truncate">· มี{item.equipment.map((key) => ROOM_EQUIPMENT_LABEL_TH[key]).join(', ')}</span>}
+                      {item.equipment.length > 0 && <span className="min-w-0 truncate">· มี{item.equipment.map((key) => lookups.label('roomEquipment', key)).join(', ')}</span>}
                     </span>
                   </label>
                 ))}
@@ -349,11 +354,13 @@ export function BookingPage() {
               </div>
               <div>
                 <label className={labelClass} htmlFor="position">ตำแหน่ง</label>
-                <input className={inputClass} id="position" required maxLength={100} autoComplete="organization-title" value={position} onChange={(e) => setPosition(e.target.value)} placeholder="เช่น ครู, หัวหน้าแผนกวิชา" />
+                <input className={inputClass} id="position" list="position-options" required maxLength={100} autoComplete="organization-title" value={position} onChange={(e) => setPosition(e.target.value)} placeholder="เลือกหรือพิมพ์ เช่น ครู" />
+                <datalist id="position-options">{lookups.active('position').map((item) => <option key={item.lookupId} value={item.label} />)}</datalist>
               </div>
               <div>
                 <label className={labelClass} htmlFor="department">หน่วยงาน / สาขาวิชา</label>
-                <input className={inputClass} id="department" required maxLength={100} value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="เช่น แผนกวิชาการบัญชี" />
+                <input className={inputClass} id="department" list="department-options" required maxLength={100} value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="เลือกหรือพิมพ์ เช่น แผนกวิชาการบัญชี" />
+                <datalist id="department-options">{lookups.active('department').map((item) => <option key={item.lookupId} value={item.label} />)}</datalist>
               </div>
               <div>
                 <label className={labelClass} htmlFor="phone">หมายเลขโทรศัพท์</label>
@@ -361,6 +368,13 @@ export function BookingPage() {
               </div>
             </div>
             <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_11rem]">
+              <div className="sm:col-span-2">
+                <label className={labelClass} htmlFor="meeting-type">ประเภทการประชุม <span className="font-normal text-ink-subtle">(ถ้ามี)</span></label>
+                <select className={inputClass} id="meeting-type" value={meetingType} onChange={(e) => setMeetingType(e.target.value)}>
+                  <option value="">ไม่ระบุ</option>
+                  {lookups.active('meetingType').map((item) => <option key={item.lookupId} value={item.key}>{item.label}</option>)}
+                </select>
+              </div>
               <div>
                 <label className={labelClass} htmlFor="title">เพื่อใช้ในการดำเนินงาน เรื่อง</label>
                 <input className={inputClass} id="title" required maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="เช่น ประชุมครูประจำแผนกวิชา" />
@@ -383,13 +397,13 @@ export function BookingPage() {
             <fieldset className="min-w-0">
               <legend className="sr-only">ครุภัณฑ์/อุปกรณ์/สิ่งอำนวยความสะดวกที่ขอใช้</legend>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {REQUEST_FACILITIES.map((key) => {
-                  const Icon = FACILITY_ICON[key];
+                {lookups.active('facility').map(({ key, label }) => {
+                  const Icon = FACILITY_ICON[key] ?? Package;
                   return (
                     <label key={key} className="flex min-h-12 cursor-pointer items-center gap-2.5 rounded-control border border-line px-3 text-sm text-ink transition-colors duration-150 hover:border-ok-border has-[:checked]:border-ok-border has-[:checked]:bg-ok-soft has-[:checked]:font-medium has-[:checked]:text-ok has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ok">
                       <input type="checkbox" className="sr-only" checked={requestedFacilities.includes(key)} onChange={() => setRequestedFacilities((current) => (current.includes(key) ? current.filter((item) => item !== key) : [...current, key]))} />
                       <Icon className="size-4 shrink-0" aria-hidden="true" />
-                      <span className="min-w-0 flex-1 leading-tight">{REQUEST_FACILITY_LABEL_TH[key]}</span>
+                      <span className="min-w-0 flex-1 leading-tight">{label}</span>
                     </label>
                   );
                 })}
@@ -461,7 +475,7 @@ export function BookingPage() {
               </SummaryRow>
               {requestedFacilities.length > 0 && (
                 <SummaryRow icon={Projector} label="ขอใช้">
-                  {requestedFacilities.map((key) => REQUEST_FACILITY_LABEL_TH[key]).join(', ')}
+                  {requestedFacilities.map((key) => lookups.label('facility', key)).join(', ')}
                 </SummaryRow>
               )}
             </dl>

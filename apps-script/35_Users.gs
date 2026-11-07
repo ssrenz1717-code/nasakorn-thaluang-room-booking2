@@ -41,7 +41,7 @@ function createUser_(admin, raw) {
     assertPinUnique_(input.pin, input.username);
     const now = nowIso_();
     const row = Object.assign({
-      username: input.username, displayName: input.displayName, department: input.department,
+      username: input.username, displayName: input.displayName, department: input.department, position: input.position,
       role: input.role, status: input.status, allowedRoomIds: Domain.writeList(input.allowedRoomIds),
       tokenVersion: 1, lastLoginAt: '', createdAt: now, updatedAt: now,
     }, newPinCredential_(input.username, input.pin), newPasswordCredential_(input.username, input.password));
@@ -64,7 +64,7 @@ function updateUser_(admin, raw) {
     if (problem !== null) throw appError_(ERROR_CODES.CONFLICT, problem);
 
     const patch = {
-      displayName: input.displayName, department: input.department, role: input.role, status: input.status,
+      displayName: input.displayName, department: input.department, position: input.position, role: input.role, status: input.status,
       allowedRoomIds: Domain.writeList(input.allowedRoomIds), updatedAt: nowIso_(),
     };
     updateByKey_(Domain.SHEET_USERS, input.username, patch);

@@ -8,6 +8,8 @@ import type { DemoBooking, DemoRoom } from './demo';
 import type { BookingRequest } from '@shared/schemas/booking';
 import type { BusySlot } from '@shared/domain/availability';
 import type { Announcement, AnnouncementInput } from '@shared/schemas/announcement';
+import type { LookupInput, LookupItem } from '@shared/schemas/lookup';
+import type { RoomInput } from '@shared/schemas/room';
 
 /**
  * ส่งสัญญาณทั้งแอปเมื่อรายการจองเปลี่ยน (จอง/ยกเลิก/อนุมัติ/ปฏิเสธ)
@@ -15,6 +17,16 @@ import type { Announcement, AnnouncementInput } from '@shared/schemas/announceme
  * ยิงจากที่นี่จุดเดียว หน้าไหนเรียกคำสั่งพวกนี้ก็ได้ผลเหมือนกันโดยไม่ต้องจำ
  */
 export const BOOKINGS_CHANGED_EVENT = 'mrb:bookings-changed';
+
+/** รายการตั้งต้นหรือห้องเปลี่ยน — ให้ทุกหน้าที่ใช้รายการพวกนี้โหลดใหม่ทันที */
+export const CATALOG_CHANGED_EVENT = 'mrb:catalog-changed';
+
+function announceCatalogChanged<T>(result: Promise<T>): Promise<T> {
+  return result.then((value) => {
+    window.dispatchEvent(new Event(CATALOG_CHANGED_EVENT));
+    return value;
+  });
+}
 
 function announceBookingsChanged<T>(result: Promise<T>): Promise<T> {
   return result.then((value) => {
@@ -46,6 +58,15 @@ export interface ApiClient {
   /** เพิ่ม (announcementId = '') หรือแก้ประกาศ — เฉพาะผู้ดูแล */
   saveAnnouncement(token: string, input: AnnouncementInput): Promise<{ announcement: Announcement }>;
   archiveAnnouncement(token: string, announcementId: string): Promise<{ ok: boolean }>;
+  /** รายการตั้งต้น (อุปกรณ์ ประเภทการประชุม แผนก ตำแหน่ง) — ทุกคนอ่านได้ */
+  lookups(token: string): Promise<{ lookups: LookupItem[] }>;
+  /** เพิ่ม (lookupId = '') หรือแก้รายการ — เฉพาะผู้ดูแล */
+  saveLookup(token: string, input: LookupInput): Promise<{ lookup: LookupItem }>;
+  archiveLookup(token: string, lookupId: string): Promise<{ ok: boolean }>;
+  /** เพิ่ม (roomId = '') หรือแก้ห้อง — เฉพาะผู้ดูแล */
+  saveRoom(token: string, input: RoomInput): Promise<{ room: DemoRoom }>;
+  /** ลบได้เฉพาะห้องที่ไม่เคยมีการจอง */
+  deleteRoom(token: string, roomId: string): Promise<{ ok: boolean }>;
   /** จัดการผู้ใช้ — เฉพาะผู้ดูแล */
   users(token: string): Promise<{ users: AdminUser[] }>;
   createUser(token: string, input: UserAccountInput & { pin: string; password: string }): Promise<{ user: AdminUser }>;
@@ -73,6 +94,11 @@ function wrap(transport: Transport): ApiClient {
     announcements: (token) => transport.call('announcements', {}, token),
     saveAnnouncement: (token, input) => transport.call('saveAnnouncement', input, token),
     archiveAnnouncement: (token, announcementId) => transport.call('archiveAnnouncement', { announcementId }, token),
+    lookups: (token) => transport.call('lookups', {}, token),
+    saveLookup: (token, input) => announceCatalogChanged(transport.call('saveLookup', input, token)),
+    archiveLookup: (token, lookupId) => announceCatalogChanged(transport.call('archiveLookup', { lookupId }, token)),
+    saveRoom: (token, input) => announceCatalogChanged(transport.call('saveRoom', input, token)),
+    deleteRoom: (token, roomId) => announceCatalogChanged(transport.call('deleteRoom', { roomId }, token)),
     users: (token) => transport.call('users', {}, token),
     createUser: (token, input) => transport.call('createUser', input, token),
     updateUser: (token, input) => transport.call('updateUser', input, token),
