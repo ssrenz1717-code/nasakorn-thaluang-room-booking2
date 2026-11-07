@@ -7,7 +7,7 @@ import { useApp } from '../../app/providers/AppProvider';
 import { ConnectionSettingsDialog } from './ConnectionSettingsDialog';
 import { TopNav } from './TopNav';
 
-/** แถบบน: โลโก้/ปุ่มปักเมนู + เมนูหลัก (จอใหญ่) + ตั้งค่าและโปรไฟล์ */
+/** แถบบน: โลโก้ + เมนูหลัก (จอใหญ่) + ตั้งค่าและโปรไฟล์ */
 export function Topbar({ badges = {} }: { badges?: Record<string, number> }) {
   const { user, signOut } = useApp();
   const [menuOpen, setMenuOpen] = useState(false);

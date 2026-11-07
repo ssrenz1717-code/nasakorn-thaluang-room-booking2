@@ -354,44 +354,23 @@ describe('จองห้องจริงตั้งแต่ต้นจน�
   }, 15_000);
 });
 
-describe('เมนูแถบบน: หุบ/กางได้ และมีป้ายแจ้งรายการรออนุมัติ', () => {
-  const sidebarPanel = () => document.querySelector('nav[data-expanded]') as HTMLElement;
-
-  it('เมนูอยู่แถบบน ไม่มีเมนูซ้าย เปิดมาหุบไว้ก่อน แต่ยังกดเมนูได้', async () => {
+describe('เมนูแถบบน: แสดงชื่อตลอด และมีป้ายแจ้งรายการรออนุมัติ', () => {
+  it('เมนูอยู่แถบบน ไม่มีเมนูซ้าย และกดเมนูได้', async () => {
     await openApp();
 
-    expect(sidebarPanel().dataset.expanded).toBe('false');
-    expect(sidebarPanel().closest('header')).not.toBeNull();
+    expect(screen.getByRole('navigation', { name: 'เมนูหลัก' }).closest('header')).not.toBeNull();
     expect(document.querySelector('aside')).toBeNull();
-    // ชื่อเมนูซ่อนจากสายตา แต่ลิงก์ยังมีชื่อให้โปรแกรมอ่านหน้าจอและกดได้
+    // ลิงก์มีชื่อเต็มให้โปรแกรมอ่านหน้าจอ
     const nav = screen.getByRole('navigation', { name: 'เมนูหลัก' });
     expect(within(nav).getByRole('link', { name: 'ห้องประชุม' })).toBeDefined();
   });
 
-  it('เอาเมาส์วางแล้วเมนูเด้งออก เอาออกแล้วหุบเอง', async () => {
+  it('เมนูบนแสดงชื่อทุกเมนูตลอด ไม่มีปุ่มกาง/หุบ', async () => {
     await openApp();
-
-    fireEvent.mouseEnter(sidebarPanel());
-    await waitFor(() => expect(sidebarPanel().dataset.expanded).toBe('true'));
-    fireEvent.mouseLeave(sidebarPanel());
-    await waitFor(() => expect(sidebarPanel().dataset.expanded).toBe('false'));
-  });
-
-  it('กดโลโก้ปฏิทินแล้วขยายค้าง และจำไว้หลังรีเฟรชหน้า', async () => {
-    const { user } = await openApp();
-
-    await user.click(screen.getByRole('button', { name: 'ขยายเมนูค้างไว้' }));
-    expect(sidebarPanel().dataset.expanded).toBe('true');
-
-    // เอาเมาส์ออกแล้วต้องไม่หุบ เพราะปักไว้แล้ว
-    fireEvent.mouseLeave(sidebarPanel());
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    expect(sidebarPanel().dataset.expanded).toBe('true');
-
-    cleanup();
-    await openApp();
-    expect(screen.getByRole('button', { name: 'ย่อเมนู' })).toBeDefined();
-    expect(sidebarPanel().dataset.expanded).toBe('true');
+    const nav = screen.getByRole('navigation', { name: 'เมนูหลัก' });
+    expect(within(nav).getByText('ปฏิทิน')).toBeDefined();
+    expect(within(nav).getByText('ตั้งค่า')).toBeDefined();
+    expect(screen.queryByRole('button', { name: /ขยายเมนู|ย่อเมนู/ })).toBeNull();
   });
 
   it('อนุมัติ 3 ขั้นคนละบัญชี: ตรวจห้องแล้วเด้งไปผู้รับรอง แล้วไปผู้อนุมัติ', async () => {
