@@ -128,11 +128,11 @@ describe('หน้าภาพรวม', () => {
   it('ตัวเลขบนการ์ดสรุปนับขึ้นไปจนถึงค่าจริง', async () => {
     await openApp();
 
-    // ข้อมูลตั้งต้นมีรายการที่อนุมัติแล้ว 4 รายการ ผู้เข้าร่วม 120+12+30+10 = 172 คน — ตัวเลขที่มองเห็น (aria-hidden) ต้องหยุดที่ 172
+    // ข้อมูลตั้งต้นมีรายการที่อนุมัติแล้ว 7 รายการ (รวมที่ประชุมไปแล้ว 3) ผู้เข้าร่วม 120+12+30+10 + 15+40+50 = 277 คน — ตัวเลขที่มองเห็น (aria-hidden) ต้องหยุดที่ 277
     const label = await screen.findByText('ผู้เข้าใช้รวม');
     const card = label.parentElement!;
     await waitFor(
-      () => expect(card.querySelector('strong [aria-hidden="true"]')?.textContent).toBe('172'),
+      () => expect(card.querySelector('strong [aria-hidden="true"]')?.textContent).toBe('277'),
       { timeout: 3000 },
     );
   });
@@ -675,5 +675,61 @@ describe('ตั้งค่าข้อมูล: ผู้ดูแลแก�
     expect(within(nav).queryByRole('link', { name: 'ตั้งค่าข้อมูล' })).toBeNull();
     window.location.hash = '#/manage';
     await waitFor(() => expect(screen.queryByRole('heading', { level: 1, name: 'ตั้งค่าข้อมูล' })).toBeNull());
+  });
+});
+
+describe('รีวิวห้องหลังใช้งาน', () => {
+  it('ผู้จองให้คะแนนการประชุมที่เสร็จแล้ว ต้องให้ดาวครบทุกด้าน และรีวิวซ้ำไม่ได้', async () => {
+    const { user, nav } = await openApp('teacher');
+    await goTo(user, nav, 'รายการจองของฉัน');
+    // จำนวนที่รอขึ้นกับเวลาที่รันเทส (การประชุมตัวอย่างของวันนี้อาจจบไปแล้ว) จึงเทียบก่อน/หลัง
+    const awaiting = () => Number(/มีการประชุม (\d+) รายการ/.exec(screen.queryByText(/รอให้คะแนนห้อง/)?.textContent ?? '')?.[1] ?? 0);
+    await waitFor(() => expect(awaiting()).toBeGreaterThan(0), { timeout: 3000 });
+    const before = awaiting();
+    // การประชุมที่รีวิวไปแล้วแสดงว่าให้คะแนนแล้ว ไม่มีปุ่มซ้ำ
+    const reviewedCard = screen.getByText('ประชุมวางแผนภาคเรียนที่ 2').closest('div.flex.flex-col') as HTMLElement;
+    expect(within(reviewedCard).getByText('ให้คะแนนแล้ว')).toBeDefined();
+    expect(within(reviewedCard).queryByRole('button', { name: 'ให้คะแนนห้อง' })).toBeNull();
+    // การประชุมที่จบแล้วไม่มีปุ่มยกเลิก
+    expect(within(reviewedCard).queryByRole('button', { name: 'ยกเลิก' })).toBeNull();
+
+    const card = screen.getByText('อบรมการเขียนแผนการสอน').closest('div.flex.flex-col') as HTMLElement;
+    await user.click(within(card).getByRole('button', { name: 'ให้คะแนนห้อง' }));
+    const dialog = await screen.findByRole('dialog', { name: /ให้คะแนน/ });
+    await user.click(within(within(dialog).getByRole('group', { name: 'ความพึงพอใจโดยรวม' })).getByRole('radio', { name: 'ดีมาก 4 จาก 5' }));
+    await user.click(within(dialog).getByRole('button', { name: 'ส่งคะแนน' }));
+    expect(within(dialog).getAllByText('กรุณาให้คะแนนด้านนี้')).toHaveLength(3);
+
+    for (const legend of ['ความสะอาด', 'อุปกรณ์', 'ความสะดวกในการใช้งาน']) {
+      const group = within(dialog).getByRole('group', { name: legend });
+      await user.click(within(group).getByRole('radio', { name: 'ดี 3 จาก 5' }));
+    }
+    await user.type(within(dialog).getByLabelText(/ความคิดเห็น/), 'ไมค์ตัวที่ 2 ถ่านหมด');
+    await user.click(within(dialog).getByRole('button', { name: 'ส่งคะแนน' }));
+    expect(await screen.findByText(/ขอบคุณที่ให้คะแนน/, {}, { timeout: 3000 })).toBeDefined();
+    expect(within(card).queryByRole('button', { name: 'ให้คะแนนห้อง' })).toBeNull();
+    expect(awaiting()).toBe(before - 1);
+  });
+
+  it('หน้าห้องประชุมแสดงคะแนนเฉลี่ยให้ทุกคน แต่ไม่แสดงความคิดเห็น', async () => {
+    const { user, nav } = await openApp('teacher');
+    await goTo(user, nav, 'ห้องประชุม');
+    expect(await screen.findAllByText('(1 รีวิว)', {}, { timeout: 3000 })).toHaveLength(2);
+    expect(screen.getAllByText('ยังไม่มีรีวิว').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/สาย HDMI หลวม/)).toBeNull();
+  });
+
+  it('ผู้ดูแลเห็นความคิดเห็นในหน้ารีวิว พนักงานเข้าไม่ได้', async () => {
+    const { user, nav } = await openApp();
+    await goTo(user, nav, 'รีวิวห้องประชุม');
+    expect(await screen.findByText(/สาย HDMI หลวม/, {}, { timeout: 3000 })).toBeDefined();
+    await user.click(screen.getByLabelText('เฉพาะที่มีความคิดเห็น'));
+    expect(screen.getByText('รีวิวทั้งหมด').parentElement!.textContent).toContain('(1 รายการ)');
+
+    cleanup(); window.localStorage.clear(); window.location.hash = '';
+    const teacher = await openApp('teacher');
+    expect(within(teacher.nav).queryByRole('link', { name: 'รีวิวห้องประชุม' })).toBeNull();
+    window.location.hash = '#/reviews';
+    await waitFor(() => expect(screen.queryByRole('heading', { level: 1, name: 'รีวิวห้องประชุม' })).toBeNull());
   });
 });

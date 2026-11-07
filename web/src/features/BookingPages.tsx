@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, DoorOpen, FileText, Search, Settings2 } from 'lucide-react';
-import { toDateKey } from '@shared/time/bangkok';
+import { CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, DoorOpen, FileText, Search, Settings2, Star } from 'lucide-react';
+import { fromDateKeyAndMinutes, toDateKey } from '@shared/time/bangkok';
 import type { SystemSettings } from '@shared/schemas/settings';
 import { TimeSelect } from '../components/ui/TimeSelect';
 import { RoomAvailability } from '../components/ui/RoomAvailability';
@@ -27,12 +27,16 @@ import { roomColorOf } from './booking/roomBands';
 import { cn } from '../lib/cn';
 import { ApprovalProgress } from './approvals/ApprovalProgress';
 import { APPROVAL_STEPS, currentApprovalStep } from '@shared/domain/approval';
+import { reviewEligibility, type Review, type RoomRatingSummary } from '@shared/schemas/review';
+import { ReviewDialog } from './reviews/ReviewDialog';
+import { StarScore } from './reviews/StarRating';
 
 export { BookingPage } from './booking/BookingPage';
 
 const inputClass = 'min-h-11 w-full rounded-control border border-line bg-surface px-3 text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand/20';
 const labelClass = 'mb-1.5 block text-sm font-medium text-ink';
 const dateText = (key: string) => new Intl.DateTimeFormat('th-TH', { dateStyle: 'long', timeZone: 'Asia/Bangkok' }).format(new Date(`${key}T12:00:00+07:00`));
+const hasEnded = (booking: { dateKey: string; endMin: number }) => fromDateKeyAndMinutes(booking.dateKey, booking.endMin).getTime() <= Date.now();
 const dateKeyOf = (date: Date) => `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,'0')}-${String(date.getUTCDate()).padStart(2,'0')}`;
 const dateFromKey = (key: string) => new Date(`${key}T12:00:00Z`);
 const shiftDate = (key: string, amount: number) => { const date=dateFromKey(key); date.setUTCDate(date.getUTCDate()+amount); return dateKeyOf(date); };
@@ -43,7 +47,10 @@ export function RoomsPage() {
   const lookups = useLookups();
   const [rooms, setRooms] = useState<DemoRoom[]>([]);
   const [error, setError] = useState('');
+  const [ratings, setRatings] = useState<Map<string, RoomRatingSummary>>(new Map());
   useEffect(() => { api.rooms(token).then(({ rooms: result }) => setRooms(result)).catch((e: Error) => setError(e.message)); }, [api, token]);
+  // คะแนนเฉลี่ยโหลดแยก — ถ้าโหลดไม่ได้ ห้องยังแสดงครบ แค่ไม่มีดาว
+  useEffect(() => { api.reviewSummary(token).then(({ summary }) => setRatings(new Map(summary.map((item) => [item.roomId, item])))).catch(() => undefined); }, [api, token]);
   const manage = user.role === 'admin' && <Link className="inline-flex min-h-11 items-center gap-2 rounded-control px-4 font-medium text-brand ring-1 ring-brand-border transition-colors hover:bg-brand-soft" to="/manage?tab=rooms"><Settings2 className="size-4" aria-hidden="true"/>เพิ่ม/แก้ไขห้อง</Link>;
   return <>
     <PageHeader title="ห้องประชุม" description="เลือกห้องที่เหมาะกับจำนวนผู้เข้าร่วมและอุปกรณ์ที่ต้องใช้" action={<div className="flex flex-wrap gap-2">{manage}<Link className="hidden min-h-11 items-center gap-2 rounded-control bg-brand-gradient lg:inline-flex px-4 font-medium text-ink-inverse shadow-brand hover:brightness-110" to="/book"><CalendarPlus className="size-4"/>จองห้อง</Link></div>} />
@@ -54,6 +61,7 @@ export function RoomsPage() {
         : <div aria-hidden="true" className={`relative h-24 bg-gradient-to-br ${ROOM_BANDS[index % ROOM_BANDS.length]} ${room.status === 'active' ? '' : 'grayscale'}`}><span className="absolute -right-6 -top-8 size-28 rounded-full bg-white/15"/><DoorOpen className="absolute bottom-4 left-5 size-9 text-white/80"/></div>}
       <CardBody className="p-5">
       <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-xs font-medium text-ink-subtle">{room.code}</p><h2 className="mt-0.5 text-lg font-semibold text-ink">{room.name}</h2></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${room.status === 'active' ? 'bg-ok-soft text-ok' : 'bg-warn-soft text-warn'}`}>{room.status === 'active' ? 'เปิดจอง' : ROOM_STATUS_LABEL_TH[room.status]}</span></div>
+      <RoomRating summary={ratings.get(room.roomId)} />
       {room.location && <p className="mt-1 text-sm text-ink-muted">{room.location}</p>}<p className="mt-3 min-h-10 text-sm text-ink-muted">{room.description || 'ไม่มีรายละเอียดเพิ่มเติม'}</p>
       <p className="mt-4 border-t border-line pt-3 text-sm font-medium">รองรับ {room.capacity} คน</p><div className="mt-2 flex flex-wrap gap-1.5">{room.equipment.map((key) => <span key={key} className="rounded-md bg-surface-sunken px-2 py-1 text-xs text-ink-muted">{lookups.label('roomEquipment', key)}</span>)}</div>
       {room.status === 'active' && <Link className="mt-5 inline-flex min-h-10 items-center font-medium text-brand hover:underline" to={`/book?room=${room.roomId}`}>จองห้องนี้</Link>}
@@ -62,9 +70,20 @@ export function RoomsPage() {
   </>;
 }
 
+function RoomRating({ summary }: { summary: RoomRatingSummary | undefined }) {
+  if (summary === undefined) return <p className="mt-1.5 text-xs text-ink-subtle">ยังไม่มีรีวิว</p>;
+  return <p className="mt-1.5 flex items-center gap-1.5 text-sm" title={`ความสะอาด ${summary.cleanliness.toFixed(1)} · อุปกรณ์ ${summary.equipment.toFixed(1)} · ใช้งานง่าย ${summary.ease.toFixed(1)}`}>
+    <StarScore value={summary.overall} /><span className="font-semibold tabular-nums text-ink">{summary.overall.toFixed(1)}</span><span className="text-ink-subtle">({summary.count} รีวิว)</span>
+  </p>;
+}
+
 export function BookingsPage({ calendar = false }: { calendar?: boolean }) {
   const { api, token } = useApp(); const settings=useSettings(); const user = useCurrentUser(); const [bookings, setBookings] = useState<DemoBooking[]>([]); const [rooms, setRooms] = useState<DemoRoom[]>([]); const [day, setDay] = useState(toDateKey(new Date())); const [calendarMode, setCalendarMode] = useState<'month'|'week'>('week'); const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [busyId, setBusyId] = useState(''); const [draft,setDraft]=useState<{dateKey:string;startMin:number}|null>(null); const [selection,setSelection]=useState<SlotSelection|null>(null); const [roomFilter,setRoomFilter]=useState<string[]>([]); const [query,setQuery]=useState(''); const [detail,setDetail]=useState<DemoBooking|null>(null); const closeDetail=useCallback(()=>setDetail(null),[]);
-  const load = () => Promise.all([api.bookings(token), api.rooms(token)]).then(([b,r])=>{setBookings(b.bookings);setRooms(r.rooms);}).catch((e:Error)=>setError(e.message));
+  const [reviewed,setReviewed]=useState<Map<string,Review>>(new Map()); const [reviewing,setReviewing]=useState<DemoBooking|null>(null);
+  const load = () => Promise.all([api.bookings(token), api.rooms(token), calendar ? null : api.reviews(token)]).then(([b,r,rv])=>{setBookings(b.bookings);setRooms(r.rooms);if(rv)setReviewed(new Map(rv.reviews.filter((item)=>item.userEmail===user.email).map((item)=>[item.bookingId,item])));}).catch((e:Error)=>setError(e.message));
+  // ปุ่มให้คะแนนขึ้นเฉพาะการจองของตัวเองที่อนุมัติแล้ว ประชุมเสร็จแล้ว และยังไม่เคยรีวิว (กฎเดียวกับ server)
+  const canReview = (booking:DemoBooking) => !calendar && reviewEligibility(booking,{userEmail:user.email,now:new Date(),alreadyReviewed:reviewed.has(booking.bookingId)}).ok;
+  const awaitingReview = calendar ? 0 : bookings.filter(canReview).length;
   useEffect(()=>{void load();},[api,token]);
   // สถานะอนุมัติเปลี่ยน (ขั้นที่ 3 กดอนุมัติ) รายการต้องขึ้นปฏิทินเองโดยไม่ต้องรีเฟรช
   useLiveRefresh(load);
@@ -82,11 +101,13 @@ export function BookingsPage({ calendar = false }: { calendar?: boolean }) {
   };
   return <><PageHeader title={calendar?'ปฏิทินการจอง':'รายการจองของฉัน'} description={calendar?'ดูตารางการใช้ห้องในวันที่เลือก':'ติดตามสถานะและจัดการรายการจองของคุณ'} action={<Link className="hidden min-h-11 items-center gap-2 rounded-control bg-brand-gradient lg:inline-flex px-4 font-medium text-ink-inverse shadow-brand hover:brightness-110" to="/book"><CalendarPlus className="size-4"/>จองห้อง</Link>}/>
     {(error||notice)&&!draft&&<Alert tone={error?'danger':'ok'} title={error?'เกิดข้อผิดพลาด':'เรียบร้อย'}>{error||notice}</Alert>}
+    {awaitingReview>0&&<Alert tone="info" title={`มีการประชุม ${awaitingReview} รายการที่รอให้คะแนนห้อง`}>ช่วยบอกผู้ดูแลว่าห้องเป็นอย่างไร ใช้เวลาไม่ถึงนาที — กดปุ่ม "ให้คะแนนห้อง" ที่รายการด้านล่าง</Alert>}
+    {reviewing&&<ReviewDialog booking={reviewing} placeName={placeName(reviewing,rooms)} onClose={()=>setReviewing(null)} onDone={(review)=>{setReviewed((current)=>new Map(current).set(review.bookingId,review));setReviewing(null);setError('');setNotice('ขอบคุณที่ให้คะแนน ผู้ดูแลจะนำไปปรับปรุงห้อง');}}/>}
     {calendar && <CalendarFilters rooms={rooms} selectedRooms={roomFilter} query={query} resultCount={visibleBookings.length} approvedCount={approvedBookings.length} onRooms={setRoomFilter} onQuery={setQuery} onExport={()=>downloadBookingsCsv(visibleBookings,rooms,`การจองห้องประชุม-${toDateKey(new Date())}`)}/>}
     {calendar && <CalendarView bookings={approvedBookings} onOpenBooking={setDetail} rooms={rooms} day={day} mode={calendarMode} slotMinutes={settings.slotMinutes} selection={draft?selection:null} onDay={setDay} onMode={setCalendarMode} onCreateSlot={(dateKey,startMin)=>{setDraft({dateKey,startMin});setError('');}}/>}
     {calendar&&detail&&<BookingDetailDialog booking={detail} rooms={rooms} onClose={closeDetail}/>}
     {calendar&&draft&&<CalendarBookingDialog draft={draft} rooms={rooms} settings={settings} busy={busyId==='create'} error={error} onClose={()=>{setDraft(null);setSelection(null);}} onTimeChange={setSelection} side={dateFromKey(draft.dateKey).getUTCDay()>=4?'left':'right'} onSubmit={createFromCalendar}/>}
-    {!calendar && <div className="space-y-3">{rows.map((booking)=><Card key={booking.bookingId}><CardBody className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-ink">{booking.title||booking.bookerName||booking.userName}</h2><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${booking.status==='confirmed'?'bg-ok-soft text-ok':booking.status==='pending'?'bg-warn-soft text-warn':'bg-neutral-soft text-ink-muted'}`}>{booking.status==='confirmed'?'ยืนยันแล้ว':booking.status==='pending'?(APPROVAL_STEPS[currentApprovalStep(booking)-1]?.waiting??'รออนุมัติ'):booking.status==='cancelled'?'ยกเลิกแล้ว':booking.status==='rejected'?'ไม่อนุมัติ':booking.status}</span></div><p className="mt-1 text-sm text-ink-muted">{placeName(booking,rooms)} · {dateText(booking.dateKey)} · {timeText(booking.startMin)}–{timeText(booking.endMin)}</p><p className="mt-1 text-xs text-ink-subtle">{booking.bookerName||booking.userName} · {booking.attendees} คน</p><ApprovalProgress booking={booking} className="mt-3 max-w-md"/></div><div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-stretch"><Link to={`/reports?booking=${booking.bookingId}`} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-control px-3 text-sm font-medium text-brand ring-1 ring-brand-border transition-colors hover:bg-brand-soft"><FileText className="size-4" aria-hidden="true"/>แบบฟอร์มคำขอ</Link>{['confirmed','pending'].includes(booking.status)&&(booking.userEmail===user.email||user.role==='admin')&&<Button variant="danger" size="sm" loading={busyId===booking.bookingId} onClick={()=>void cancel(booking.bookingId)}>ยกเลิก</Button>}</div></CardBody></Card>)}
+    {!calendar && <div className="space-y-3">{rows.map((booking)=><Card key={booking.bookingId}><CardBody className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-ink">{booking.title||booking.bookerName||booking.userName}</h2><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${booking.status==='confirmed'&&!hasEnded(booking)?'bg-ok-soft text-ok':booking.status==='pending'?'bg-warn-soft text-warn':'bg-neutral-soft text-ink-muted'}`}>{booking.status==='confirmed'||booking.status==='completed'?(hasEnded(booking)?'ประชุมเสร็จแล้ว':'ยืนยันแล้ว'):booking.status==='pending'?(APPROVAL_STEPS[currentApprovalStep(booking)-1]?.waiting??'รออนุมัติ'):booking.status==='cancelled'?'ยกเลิกแล้ว':booking.status==='rejected'?'ไม่อนุมัติ':booking.status}</span></div><p className="mt-1 text-sm text-ink-muted">{placeName(booking,rooms)} · {dateText(booking.dateKey)} · {timeText(booking.startMin)}–{timeText(booking.endMin)}</p><p className="mt-1 text-xs text-ink-subtle">{booking.bookerName||booking.userName} · {booking.attendees} คน</p><ApprovalProgress booking={booking} className="mt-3 max-w-md"/></div><div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-stretch"><Link to={`/reports?booking=${booking.bookingId}`} className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-control px-3 text-sm font-medium text-brand ring-1 ring-brand-border transition-colors hover:bg-brand-soft"><FileText className="size-4" aria-hidden="true"/>แบบฟอร์มคำขอ</Link>{reviewed.has(booking.bookingId)?<span className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-control bg-surface-sunken px-3 text-sm text-ink-muted"><StarScore value={reviewed.get(booking.bookingId)!.overall}/>ให้คะแนนแล้ว</span>:canReview(booking)&&<Button size="sm" icon={<Star className="size-4" aria-hidden="true"/>} onClick={()=>setReviewing(booking)}>ให้คะแนนห้อง</Button>}{['confirmed','pending'].includes(booking.status)&&!hasEnded(booking)&&(booking.userEmail===user.email||user.role==='admin')&&<Button variant="danger" size="sm" loading={busyId===booking.bookingId} onClick={()=>void cancel(booking.bookingId)}>ยกเลิก</Button>}</div></CardBody></Card>)}
     {!calendar&&!rows.length&&<Card><CardBody className="py-14 text-center"><Search className="mx-auto size-8 text-ink-subtle"/><p className="mt-3 font-medium text-ink">ยังไม่มีรายการจอง</p><p className="mt-1 text-sm text-ink-muted">เลือกห้องและเวลาที่สะดวกเพื่อสร้างรายการแรก</p><Link className="mt-4 inline-flex min-h-11 items-center rounded-control bg-brand px-4 font-medium text-ink-inverse" to="/book">จองห้องประชุม</Link></CardBody></Card>}</div>}
   </>;
 }

@@ -5,6 +5,7 @@ import {
   ClipboardCheck,
   DoorOpen,
   Settings2,
+  Star,
   LayoutDashboard,
   UsersRound,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/my-bookings', label: 'รายการจองของฉัน', icon: ClipboardList, mobile: 'bar' },
   { path: '/rooms', label: 'ห้องประชุม', icon: DoorOpen },
   { path: '/approvals', label: 'อนุมัติการใช้ห้อง', icon: ClipboardCheck, roles: ['admin', 'inspector', 'endorser', 'director'] },
+  { path: '/reviews', label: 'รีวิวห้องประชุม', icon: Star, roles: ['admin'] },
   { path: '/reports', label: 'พิมพ์แบบฟอร์ม A4', icon: ClipboardList },
   { path: '/users', label: 'จัดการผู้ใช้', icon: UsersRound, roles: ['admin'] },
   { path: '/manage', label: 'ตั้งค่าข้อมูล', icon: Settings2, roles: ['admin'] },

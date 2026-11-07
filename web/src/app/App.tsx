@@ -9,6 +9,7 @@ import { BookingPage, BookingsPage, RoomsPage } from '../features/BookingPages';
 import { ApprovalsPage, PrintFormPage } from '../features/ApprovalReportPages';
 import { UsersPage } from '../features/users/UsersPage';
 import { ManagePage } from '../features/manage/ManagePage';
+import { ReviewsPage } from '../features/reviews/ReviewsPage';
 import { useApp } from './providers/AppProvider';
 
 /** หน้าของผู้ดูแลเท่านั้น — คนอื่นพิมพ์ URL เข้ามาเองจะถูกพากลับหน้าภาพรวม (server ตรวจสิทธิ์ซ้ำทุกคำสั่งอยู่แล้ว) */
@@ -41,6 +42,7 @@ export function App() {
         <Route path="/approvals" element={<ApprovalsPage />} />
         <Route path="/reports" element={<PrintFormPage />} />
         <Route path="/users" element={<AdminOnly><UsersPage /></AdminOnly>} />
+        <Route path="/reviews" element={<AdminOnly><ReviewsPage /></AdminOnly>} />
         <Route path="/manage" element={<AdminOnly><ManagePage /></AdminOnly>} />
         {/*
           เส้นทางของโมดูลที่ยังไม่เสร็จ ชี้กลับหน้าภาพรวม

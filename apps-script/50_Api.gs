@@ -110,6 +110,11 @@ function apiHandlers_() {
     saveAnnouncement: function (payload, token) { return saveAnnouncement_(requireAdmin_(token), payload || {}); },
     archiveAnnouncement: function (payload, token) { return archiveAnnouncement_(requireAdmin_(token), payload || {}); },
 
+    // รีวิวหลังใช้ห้อง — คะแนนเฉลี่ยทุกคนเห็น ความคิดเห็นเฉพาะผู้ดูแล (และเจ้าของรีวิว)
+    reviewSummary: function (payload, token) { authenticate_(token); return reviewSummary_(); },
+    reviews: function (payload, token) { return listReviews_(authenticate_(token)); },
+    submitReview: function (payload, token) { return submitReview_(authenticate_(token), payload || {}); },
+
     // ข้อมูลตั้งต้นและห้องประชุม — ทุกคนอ่านได้ แก้ได้เฉพาะผู้ดูแล
     lookups: function (payload, token) { authenticate_(token); return listLookups_(); },
     saveLookup: function (payload, token) { return saveLookup_(requireAdmin_(token), payload || {}); },

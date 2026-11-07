@@ -12,6 +12,7 @@ const TOP_LABEL: Record<string, string> = {
   '/my-bookings': 'ของฉัน',
   '/rooms': 'ห้อง',
   '/approvals': 'อนุมัติ',
+  '/reviews': 'รีวิว',
   '/reports': 'พิมพ์ฟอร์ม',
   '/users': 'ผู้ใช้',
   '/manage': 'ตั้งค่า',

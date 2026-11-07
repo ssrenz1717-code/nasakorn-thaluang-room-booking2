@@ -51,6 +51,10 @@ var Domain = (() => {
     PIN_TAKEN_MESSAGE: () => PIN_TAKEN_MESSAGE,
     REQUEST_FACILITIES: () => REQUEST_FACILITIES,
     REQUEST_FACILITY_LABEL_TH: () => REQUEST_FACILITY_LABEL_TH,
+    REVIEW_ASPECTS: () => REVIEW_ASPECTS,
+    REVIEW_ASPECT_LABEL_TH: () => REVIEW_ASPECT_LABEL_TH,
+    REVIEW_COMMENT_MAX: () => REVIEW_COMMENT_MAX,
+    REVIEW_WINDOW_DAYS: () => REVIEW_WINDOW_DAYS,
     ROOM_EQUIPMENT: () => ROOM_EQUIPMENT,
     ROOM_EQUIPMENT_LABEL_TH: () => ROOM_EQUIPMENT_LABEL_TH,
     ROOM_IMAGE_MAX_CHARS: () => ROOM_IMAGE_MAX_CHARS,
@@ -63,6 +67,7 @@ var Domain = (() => {
     SHEET_LOOKUPS: () => SHEET_LOOKUPS,
     SHEET_META: () => SHEET_META,
     SHEET_NOTIFICATIONS: () => SHEET_NOTIFICATIONS,
+    SHEET_REVIEWS: () => SHEET_REVIEWS,
     SHEET_ROOMS: () => SHEET_ROOMS,
     SHEET_SETTINGS: () => SHEET_SETTINGS,
     SHEET_SPECS: () => SHEET_SPECS,
@@ -134,6 +139,7 @@ var Domain = (() => {
     readNumber: () => readNumber,
     readSettingsOrDefault: () => readSettingsOrDefault,
     readString: () => readString,
+    reviewEligibility: () => reviewEligibility,
     roleForStep: () => roleForStep,
     rowToObject: () => rowToObject,
     rowsToObjects: () => rowsToObjects,
@@ -145,6 +151,7 @@ var Domain = (() => {
     sortLookups: () => sortLookups,
     stepForRole: () => stepForRole,
     suggestAlternatives: () => suggestAlternatives,
+    summarizeRoomRatings: () => summarizeRoomRatings,
     toDateKey: () => toDateKey,
     toMinutesOfDay: () => toMinutesOfDay,
     tzOffsetMinutes: () => tzOffsetMinutes,
@@ -160,6 +167,7 @@ var Domain = (() => {
     validatePinLoginInput: () => validatePinLoginInput,
     validateResetPasswordInput: () => validateResetPasswordInput,
     validateResetPinInput: () => validateResetPinInput,
+    validateReviewInput: () => validateReviewInput,
     validateRoomInput: () => validateRoomInput,
     validateSystemSettings: () => validateSystemSettings,
     validateUserAccountInput: () => validateUserAccountInput,
@@ -511,6 +519,7 @@ var Domain = (() => {
   var SHEET_META = "Meta";
   var SHEET_ANNOUNCEMENTS = "Announcements";
   var SHEET_LOOKUPS = "Lookups";
+  var SHEET_REVIEWS = "Reviews";
   var BOOKING_HOT_COLUMNS = 6;
   var SHEET_SPECS = [
     {
@@ -643,6 +652,26 @@ var Domain = (() => {
       name: SHEET_LOOKUPS,
       keyColumn: "lookupId",
       headers: ["lookupId", "kind", "key", "label", "note", "sortOrder", "active", "createdAt", "updatedAt", "archivedAt"]
+    },
+    {
+      // รีวิวหลังใช้ห้อง — คีย์เป็น bookingId เพราะรีวิวได้ครั้งเดียวต่อการจอง
+      name: SHEET_REVIEWS,
+      keyColumn: "bookingId",
+      headers: [
+        "bookingId",
+        "roomId",
+        "userEmail",
+        "userName",
+        "department",
+        "bookingTitle",
+        "dateKey",
+        "overall",
+        "cleanliness",
+        "equipment",
+        "ease",
+        "comment",
+        "createdAt"
+      ]
     }
   ];
   function sheetSpec(name) {
@@ -1772,6 +1801,57 @@ var Domain = (() => {
       sortOrder: (index + 1) * 10,
       active: true
     })));
+  }
+
+  // shared/schemas/review.ts
+  var REVIEW_ASPECTS = ["overall", "cleanliness", "equipment", "ease"];
+  var REVIEW_ASPECT_LABEL_TH = {
+    overall: "\u0E04\u0E27\u0E32\u0E21\u0E1E\u0E36\u0E07\u0E1E\u0E2D\u0E43\u0E08\u0E42\u0E14\u0E22\u0E23\u0E27\u0E21",
+    cleanliness: "\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E30\u0E2D\u0E32\u0E14",
+    equipment: "\u0E2D\u0E38\u0E1B\u0E01\u0E23\u0E13\u0E4C",
+    ease: "\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E30\u0E14\u0E27\u0E01\u0E43\u0E19\u0E01\u0E32\u0E23\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19"
+  };
+  var REVIEW_COMMENT_MAX = 500;
+  var REVIEW_WINDOW_DAYS = 30;
+  function validateReviewInput(raw) {
+    const input = asRecord(raw);
+    const check = new Check();
+    const bookingId = check.string("bookingId", input.bookingId, { label: "\u0E23\u0E2B\u0E31\u0E2A\u0E01\u0E32\u0E23\u0E08\u0E2D\u0E07", max: 80 });
+    const scores = {};
+    for (const aspect of REVIEW_ASPECTS) {
+      scores[aspect] = check.integer(aspect, input[aspect], { label: REVIEW_ASPECT_LABEL_TH[aspect], min: 1, max: 5 });
+    }
+    const comment = check.string("comment", input.comment, { label: "\u0E04\u0E27\u0E32\u0E21\u0E04\u0E34\u0E14\u0E40\u0E2B\u0E47\u0E19", max: REVIEW_COMMENT_MAX, fallback: "" });
+    return check.result({ bookingId, ...scores, comment });
+  }
+  function reviewEligibility(booking, context) {
+    if (booking.userEmail !== context.userEmail) return { ok: false, message: "\u0E23\u0E35\u0E27\u0E34\u0E27\u0E44\u0E14\u0E49\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E01\u0E32\u0E23\u0E08\u0E2D\u0E07\u0E02\u0E2D\u0E07\u0E15\u0E31\u0E27\u0E40\u0E2D\u0E07" };
+    if (booking.status !== "confirmed" && booking.status !== "completed") {
+      return { ok: false, message: "\u0E23\u0E35\u0E27\u0E34\u0E27\u0E44\u0E14\u0E49\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E01\u0E32\u0E23\u0E08\u0E2D\u0E07\u0E17\u0E35\u0E48\u0E2D\u0E19\u0E38\u0E21\u0E31\u0E15\u0E34\u0E41\u0E25\u0E49\u0E27" };
+    }
+    if (context.alreadyReviewed) return { ok: false, message: "\u0E23\u0E35\u0E27\u0E34\u0E27\u0E01\u0E32\u0E23\u0E08\u0E2D\u0E07\u0E19\u0E35\u0E49\u0E44\u0E1B\u0E41\u0E25\u0E49\u0E27" };
+    const end = fromDateKeyAndMinutes(booking.dateKey, booking.endMin).getTime();
+    if (context.now.getTime() < end) return { ok: false, message: "\u0E23\u0E35\u0E27\u0E34\u0E27\u0E44\u0E14\u0E49\u0E2B\u0E25\u0E31\u0E07\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E41\u0E25\u0E49\u0E27" };
+    if (context.now.getTime() > end + REVIEW_WINDOW_DAYS * 864e5) {
+      return { ok: false, message: `\u0E40\u0E25\u0E22\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E23\u0E35\u0E27\u0E34\u0E27\u0E41\u0E25\u0E49\u0E27 (\u0E23\u0E35\u0E27\u0E34\u0E27\u0E44\u0E14\u0E49\u0E20\u0E32\u0E22\u0E43\u0E19 ${REVIEW_WINDOW_DAYS} \u0E27\u0E31\u0E19\u0E2B\u0E25\u0E31\u0E07\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21)` };
+    }
+    return { ok: true };
+  }
+  var round1 = (value) => Math.round(value * 10) / 10;
+  function summarizeRoomRatings(reviews) {
+    var _a;
+    const totals = /* @__PURE__ */ new Map();
+    for (const review of reviews) {
+      const total = (_a = totals.get(review.roomId)) != null ? _a : { count: 0, overall: 0, cleanliness: 0, equipment: 0, ease: 0 };
+      total.count += 1;
+      for (const aspect of REVIEW_ASPECTS) total[aspect] += Number(review[aspect]) || 0;
+      totals.set(review.roomId, total);
+    }
+    return [...totals.entries()].map(([roomId, total]) => {
+      const summary = { roomId, count: total.count };
+      for (const aspect of REVIEW_ASPECTS) summary[aspect] = round1(total[aspect] / total.count);
+      return summary;
+    });
   }
   return __toCommonJS(index_exports);
 })();

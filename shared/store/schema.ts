@@ -38,6 +38,7 @@ export const SHEET_SETTINGS = 'Settings';
 export const SHEET_META = 'Meta';
 export const SHEET_ANNOUNCEMENTS = 'Announcements';
 export const SHEET_LOOKUPS = 'Lookups';
+export const SHEET_REVIEWS = 'Reviews';
 
 /**
  * คอลัมน์ของ Bookings เรียงให้ 6 คอลัมน์แรกเป็นคอลัมน์ที่ใช้ตรวจเวลาทับซ้อน
@@ -179,6 +180,15 @@ export const SHEET_SPECS: SheetSpec[] = [
     name: SHEET_LOOKUPS,
     keyColumn: 'lookupId',
     headers: ['lookupId', 'kind', 'key', 'label', 'note', 'sortOrder', 'active', 'createdAt', 'updatedAt', 'archivedAt'],
+  },
+  {
+    // รีวิวหลังใช้ห้อง — คีย์เป็น bookingId เพราะรีวิวได้ครั้งเดียวต่อการจอง
+    name: SHEET_REVIEWS,
+    keyColumn: 'bookingId',
+    headers: [
+      'bookingId', 'roomId', 'userEmail', 'userName', 'department', 'bookingTitle', 'dateKey',
+      'overall', 'cleanliness', 'equipment', 'ease', 'comment', 'createdAt',
+    ],
   },
 ];
 

@@ -23,6 +23,7 @@ import { canSeeAllBookings, decideApprovalStep, type ApprovalEntry } from '@shar
 import { COLLEGE_ROOMS, OPEN_LOCATION_ROOM_CODE, isOpenLocationRoom } from '@shared/schemas/room';
 import { validateDecideBookingInput } from '@shared/schemas/booking';
 import { validateRoomInput } from '@shared/schemas/room';
+import { REVIEW_ASPECTS, reviewEligibility, summarizeRoomRatings, validateReviewInput, type Review } from '@shared/schemas/review';
 import {
   defaultLookups, newLookupKey, sortLookups, unknownLookupKeys, validateLookupInput, type LookupItem,
 } from '@shared/schemas/lookup';
@@ -94,6 +95,7 @@ interface DemoState {
   announcements: Announcement[];
   /** รวมรายการที่ลบไปแล้ว (archived) — การจองเก่ายังต้องอ่านชื่อได้ */
   lookups: (LookupItem & { archived?: boolean })[];
+  reviews: Review[];
   dataVersion: number;
 }
 
@@ -253,6 +255,39 @@ function seedBookings(): DemoBooking[] {
   ];
 }
 
+/** การประชุมที่ผ่านไปแล้ว — ให้ลองรีวิวได้ทันที (รายการแรกรีวิวไว้แล้ว รายการที่สองยังรอให้คะแนน) */
+function pastBookings(): DemoBooking[] {
+  const today = toDateKey(new Date());
+  const at = new Date().toISOString();
+  const common = { equipment: [], note: '', termsAccepted: true, extraFurnitureCount: 0, otherFacility: '', customLocation: '', createdAt: at,
+    status: 'confirmed' as const, approvalStep: 0, approvalLog: signedLog(3, at), requesterPosition: 'ครู', requesterPhone: '081-234-5678' };
+  return [
+    { ...common, bookingId: 'demo-bk-past-1', roomId: 'demo-room-2', dateKey: addDaysToDateKey(today, -3), startMin: 9 * 60, endMin: 11 * 60,
+      title: 'ประชุมวางแผนภาคเรียนที่ 2', bookerName: 'ครูทดลอง ใจดี', userEmail: 'teacher', userName: 'ครูทดลอง ใจดี',
+      department: 'แผนกวิชาการบัญชี', attendees: 15, requestedFacilities: ['projector'] },
+    { ...common, bookingId: 'demo-bk-past-2', roomId: 'demo-room-1', dateKey: addDaysToDateKey(today, -1), startMin: 13 * 60, endMin: 15 * 60,
+      title: 'อบรมการเขียนแผนการสอน', bookerName: 'ครูทดลอง ใจดี', userEmail: 'teacher', userName: 'ครูทดลอง ใจดี',
+      department: 'แผนกวิชาการบัญชี', attendees: 40, requestedFacilities: ['projector', 'microphone'] },
+    { ...common, bookingId: 'demo-bk-past-3', roomId: 'demo-room-1', dateKey: addDaysToDateKey(today, -2), startMin: 10 * 60, endMin: 12 * 60,
+      title: 'ประชุมงานประกันคุณภาพ', bookerName: 'อ.ปรีชา ศรีวงศ์', userEmail: 'shoyu', userName: 'shoyu',
+      department: 'แผนกวิชาเทคโนโลยีสารสนเทศ', attendees: 50, requestedFacilities: ['soundSystem'] },
+  ];
+}
+
+/** รีวิวตัวอย่าง — ผูกกับการประชุมที่ผ่านไปแล้วใน pastBookings() */
+function seedReviews(): Review[] {
+  const today = toDateKey(new Date());
+  const at = new Date().toISOString();
+  return [
+    { bookingId: 'demo-bk-past-1', roomId: 'demo-room-2', userEmail: 'teacher', userName: 'ครูทดลอง ใจดี', department: 'แผนกวิชาการบัญชี',
+      bookingTitle: 'ประชุมวางแผนภาคเรียนที่ 2', dateKey: addDaysToDateKey(today, -3), overall: 4, cleanliness: 5, equipment: 3, ease: 4,
+      comment: 'ห้องสะอาด แต่สาย HDMI หลวม ภาพกระพริบเป็นช่วง ๆ', createdAt: at },
+    { bookingId: 'demo-bk-past-3', roomId: 'demo-room-1', userEmail: 'shoyu', userName: 'shoyu', department: 'แผนกวิชาเทคโนโลยีสารสนเทศ',
+      bookingTitle: 'ประชุมงานประกันคุณภาพ', dateKey: addDaysToDateKey(today, -2), overall: 5, cleanliness: 4, equipment: 5, ease: 5,
+      comment: '', createdAt: at },
+  ];
+}
+
 /**
  * เก็บการจองไว้ใน localStorage ของเบราว์เซอร์
  *
@@ -269,7 +304,7 @@ async function loadState(): Promise<DemoState> {
   if (saved === null) return state;
   try {
     const parsed = JSON.parse(saved) as {
-      users?: unknown; bookings?: unknown; announcements?: unknown; rooms?: unknown; lookups?: unknown; dataVersion?: unknown;
+      users?: unknown; bookings?: unknown; announcements?: unknown; rooms?: unknown; lookups?: unknown; reviews?: unknown; dataVersion?: unknown;
     };
     if (Array.isArray(parsed.users) && parsed.users.length > 0) state.users = parsed.users as DemoUser[];
     if (Array.isArray(parsed.bookings)) state.bookings = parsed.bookings as DemoBooking[];
@@ -277,6 +312,7 @@ async function loadState(): Promise<DemoState> {
     // ข้อมูลที่บันทึกก่อนมีหน้าตั้งค่าข้อมูลไม่มีสองอย่างนี้ — ใช้ชุดเริ่มต้นแทน
     if (Array.isArray(parsed.rooms) && parsed.rooms.length > 0) state.rooms = parsed.rooms as DemoRoom[];
     if (Array.isArray(parsed.lookups) && parsed.lookups.length > 0) state.lookups = parsed.lookups as DemoState['lookups'];
+    if (Array.isArray(parsed.reviews)) state.reviews = parsed.reviews as Review[];
     if (typeof parsed.dataVersion === 'number') state.dataVersion = parsed.dataVersion;
   } catch {
     // ข้อมูลที่เก็บไว้เสีย ใช้ข้อมูลตั้งต้นแทน ดีกว่าเปิดเว็บไม่ขึ้น
@@ -289,7 +325,7 @@ function saveState(state: DemoState): void {
     LOCAL_STORAGE_KEY,
     JSON.stringify({
       users: state.users, bookings: state.bookings, announcements: state.announcements,
-      rooms: state.rooms, lookups: state.lookups, dataVersion: state.dataVersion,
+      rooms: state.rooms, lookups: state.lookups, reviews: state.reviews, dataVersion: state.dataVersion,
     }),
   );
 }
@@ -299,9 +335,10 @@ function createState(users: DemoUser[]): DemoState {
     settings: { ...DEFAULT_SYSTEM_SETTINGS },
     users,
     rooms: seedRooms(),
-    bookings: seedBookings(),
+    bookings: [...pastBookings(), ...seedBookings()],
     announcements: seedAnnouncements(),
     lookups: defaultLookups(),
+    reviews: seedReviews(),
     dataVersion: 1,
   };
 }
@@ -620,6 +657,35 @@ export function createDemoTransport(): Transport {
       found.archivedAt = new Date().toISOString();
       state.dataVersion += 1; saveState(state);
       return { ok: true };
+    },
+
+    reviewSummary: (_payload, token) => {
+      userFromToken(token);
+      return { summary: summarizeRoomRatings(state.reviews) };
+    },
+    reviews: (_payload, token) => {
+      const user = userFromToken(token);
+      return { reviews: user.role === 'admin' ? state.reviews : state.reviews.filter((review) => review.userEmail === user.email) };
+    },
+    submitReview: (payload: unknown, token) => {
+      const user = userFromToken(token);
+      const parsed = validateReviewInput(payload);
+      if (!parsed.ok) throw new ApiError('VALIDATION', issues(parsed), parsed.issues);
+      const input = parsed.value;
+      const booking = state.bookings.find((item) => item.bookingId === input.bookingId);
+      if (!booking) throw new ApiError('NOT_FOUND', 'ไม่พบรายการจอง');
+      const eligibility = reviewEligibility(booking, {
+        userEmail: user.email, now: new Date(), alreadyReviewed: state.reviews.some((review) => review.bookingId === input.bookingId),
+      });
+      if (!eligibility.ok) throw new ApiError('CONFLICT', eligibility.message);
+      const review: Review = {
+        bookingId: input.bookingId, roomId: booking.roomId, userEmail: user.email, userName: user.displayName,
+        department: booking.department, bookingTitle: booking.title, dateKey: booking.dateKey, comment: input.comment,
+        createdAt: new Date().toISOString(), overall: 0, cleanliness: 0, equipment: 0, ease: 0,
+      };
+      for (const aspect of REVIEW_ASPECTS) review[aspect] = input[aspect];
+      state.reviews.push(review); changed();
+      return { review };
     },
 
     lookups: (_payload, token) => {

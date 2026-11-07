@@ -10,6 +10,7 @@ import type { BusySlot } from '@shared/domain/availability';
 import type { Announcement, AnnouncementInput } from '@shared/schemas/announcement';
 import type { LookupInput, LookupItem } from '@shared/schemas/lookup';
 import type { RoomInput } from '@shared/schemas/room';
+import type { Review, ReviewInput, RoomRatingSummary } from '@shared/schemas/review';
 
 /**
  * ส่งสัญญาณทั้งแอปเมื่อรายการจองเปลี่ยน (จอง/ยกเลิก/อนุมัติ/ปฏิเสธ)
@@ -67,6 +68,11 @@ export interface ApiClient {
   saveRoom(token: string, input: RoomInput): Promise<{ room: DemoRoom }>;
   /** ลบได้เฉพาะห้องที่ไม่เคยมีการจอง */
   deleteRoom(token: string, roomId: string): Promise<{ ok: boolean }>;
+  /** คะแนนเฉลี่ยรายห้อง — ทุกคนเห็น ไม่มีความคิดเห็นติดมา */
+  reviewSummary(token: string): Promise<{ summary: RoomRatingSummary[] }>;
+  /** ผู้ดูแลได้ทุกรีวิว คนอื่นได้เฉพาะของตัวเอง */
+  reviews(token: string): Promise<{ reviews: Review[] }>;
+  submitReview(token: string, input: ReviewInput): Promise<{ review: Review }>;
   /** จัดการผู้ใช้ — เฉพาะผู้ดูแล */
   users(token: string): Promise<{ users: AdminUser[] }>;
   createUser(token: string, input: UserAccountInput & { pin: string; password: string }): Promise<{ user: AdminUser }>;
@@ -99,6 +105,9 @@ function wrap(transport: Transport): ApiClient {
     archiveLookup: (token, lookupId) => announceCatalogChanged(transport.call('archiveLookup', { lookupId }, token)),
     saveRoom: (token, input) => announceCatalogChanged(transport.call('saveRoom', input, token)),
     deleteRoom: (token, roomId) => announceCatalogChanged(transport.call('deleteRoom', { roomId }, token)),
+    reviewSummary: (token) => transport.call('reviewSummary', {}, token),
+    reviews: (token) => transport.call('reviews', {}, token),
+    submitReview: (token, input) => announceBookingsChanged(transport.call('submitReview', input, token)),
     users: (token) => transport.call('users', {}, token),
     createUser: (token, input) => transport.call('createUser', input, token),
     updateUser: (token, input) => transport.call('updateUser', input, token),
