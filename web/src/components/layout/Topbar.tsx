@@ -39,7 +39,7 @@ export function Topbar({ badges = {} }: { badges?: Record<string, number> }) {
 
   return (
     <header className="sticky top-0 z-[20] border-b border-line bg-surface/95 backdrop-blur">
-      <div className="mx-auto flex min-h-14 max-w-[90rem] items-center gap-3 px-4 pt-[env(safe-area-inset-top)] lg:min-h-[4.25rem] lg:px-6">
+      <div className="mx-auto flex min-h-14 max-w-[90rem] items-center gap-3 px-4 pt-[env(safe-area-inset-top)] lg:min-h-[5rem] lg:px-6">
         {user !== null && <TopNav role={user.role} badges={badges} />}
         {/* มือถือไม่มีเมนูบน จึงแสดงชื่อแอปไว้ด้านบนให้รู้ว่าอยู่ที่ไหน */}
         <div className="flex min-w-0 items-center gap-2.5 lg:hidden">

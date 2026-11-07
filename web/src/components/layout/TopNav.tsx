@@ -20,8 +20,8 @@ const TOP_LABEL: Record<string, string> = {
 
 /**
  * เมนูหลักแถบบน (จอใหญ่) — แสดงชื่อทุกเมนูตลอด ไม่ต้องชี้เมาส์หรือกดกาง
- *  - จอ lg: ไอคอนอยู่บนชื่อ (ตัวเล็ก) ให้ครบทุกเมนูในแถวเดียว
- *  - จอกว้างพอ: ไอคอนกับชื่ออยู่บรรทัดเดียวกัน
+ *  - แถบยืดเต็มพื้นที่ที่เหลือ แต่ละเมนูกว้างเท่ากัน กดง่าย
+ *  - จอ lg–xl: ไอคอนอยู่บนชื่อ ให้ครบทุกเมนูในแถวเดียว · จอ 2xl: ไอคอนกับชื่ออยู่บรรทัดเดียวกัน
  */
 export function TopNav({ role, badges }: { role: UserRole; badges: Record<string, number> }) {
   const items = visibleNavItems(role);
@@ -36,29 +36,29 @@ export function TopNav({ role, badges }: { role: UserRole; badges: Record<string
       </span>
 
       <nav aria-label="เมนูหลัก" className="hidden min-w-0 flex-1 justify-center lg:flex">
-        <ul className="flex items-center gap-1 rounded-pill bg-gradient-to-b from-surface to-surface-sunken p-1.5 ring-1 ring-line shadow-[var(--shadow-3d-bar)] 2xl:gap-1.5">
+        <ul className="flex w-full max-w-[72rem] items-stretch gap-1 rounded-[1.25rem] bg-gradient-to-b from-surface to-surface-sunken p-1.5 ring-1 ring-line shadow-[var(--shadow-3d-bar)] 2xl:rounded-pill">
           {items.map((item) => {
             const badge = badges[item.path] ?? 0;
             return (
-              <li key={item.path}>
+              <li key={item.path} className="min-w-0 flex-1">
                 <NavLink
                   to={item.path}
                   end={item.path === '/'}
                   title={item.label}
                   aria-label={badge > 0 ? `${item.label} (มี ${badge} รายการ)` : item.label}
                   className={({ isActive }) => cn(
-                    'relative flex min-h-11 flex-col items-center justify-center gap-0.5 whitespace-nowrap rounded-pill px-3 text-xs font-medium',
-                    '2xl:min-h-10 2xl:flex-row 2xl:gap-2 2xl:px-4 2xl:text-sm',
+                    'relative flex min-h-14 w-full flex-col items-center justify-center gap-1 whitespace-nowrap rounded-2xl px-1.5 text-[13px] font-medium xl:px-2.5 xl:text-sm',
+                    '2xl:min-h-12 2xl:flex-row 2xl:gap-2 2xl:rounded-pill 2xl:px-4 2xl:text-[15px]',
                     'transition-[background-color,color,box-shadow,transform] duration-150 ease-out',
                     isActive
                       ? 'bg-brand-gradient text-ink-inverse shadow-[var(--shadow-3d-brand)] active:translate-y-0.5 active:shadow-[var(--shadow-3d-brand-pressed)]'
                       : 'text-ink-muted hover:bg-brand-soft hover:text-brand active:translate-y-px',
                   )}
                 >
-                  <item.icon className="size-4 shrink-0" aria-hidden="true" />
+                  <item.icon className="size-5 shrink-0" aria-hidden="true" />
                   <span aria-hidden="true">{TOP_LABEL[item.path] ?? item.label}</span>
                   {badge > 0 && (
-                    <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-gold px-1.5 text-[11px] font-semibold leading-none text-ink ring-2 ring-surface motion-safe:animate-[pop_200ms_var(--ease-out)_both] 2xl:static 2xl:ring-0">
+                    <span aria-hidden="true" className="absolute left-1/2 top-1 ml-1 grid h-5 min-w-5 place-items-center rounded-full bg-gold px-1.5 text-[11px] font-semibold leading-none text-ink ring-2 ring-surface motion-safe:animate-[pop_200ms_var(--ease-out)_both] 2xl:static 2xl:ring-0">
                       {badge > 99 ? '99+' : badge}
                     </span>
                   )}
