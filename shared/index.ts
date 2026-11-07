@@ -18,3 +18,5 @@ export * from './schemas/booking';
 export * from './schemas/announcement';
 export * from './schemas/lookup';
 export * from './schemas/review';
+export * from './domain/report';
+export * from './domain/room-status';

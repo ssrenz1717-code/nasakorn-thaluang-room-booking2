@@ -28,6 +28,7 @@ import type { DemoBooking, DemoRoom } from '../../lib/api/demo';
 import { BOOKINGS_CHANGED_EVENT } from '../../lib/api/client';
 import { AnnouncementsPanel } from './AnnouncementsPanel';
 import { DepartmentRanking } from './DepartmentRanking';
+import { RoomStatusNow } from './RoomStatusNow';
 
 const WEEKDAY_LABELS = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
 
@@ -157,6 +158,8 @@ export function DashboardPage() {
         <Card><CardHeader title="สถิติการขอใช้อุปกรณ์/สิ่งอำนวยความสะดวก" description="จากคำขอจองทั้งหมด"/><CardBody><div className="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-4 sm:grid-cols-[190px_minmax(0,1fr)] sm:gap-5"><div className="relative mx-auto grid size-32 place-items-center sm:size-44"><FacilityDonut items={facilityStats} colors={donutColors} total={facilityTotal} sweep={sweep} active={activeFacility} onActive={setActiveFacility}/><div className="relative grid -translate-y-1.5 place-items-center text-center sm:-translate-y-2"><div><strong data-numeric className="block text-xl text-ink sm:text-2xl"><CountUp value={facilityTotal} duration={1100}/></strong><span className="hidden text-xs leading-tight text-ink-muted sm:block">รายการอุปกรณ์</span><span className="sr-only sm:hidden">รายการอุปกรณ์</span></div></div></div><ul className="space-y-2">{facilityStats.map((item,index)=><li key={item.key} onMouseEnter={()=>setActiveFacility(item.key)} onMouseLeave={()=>setActiveFacility(null)} className={`${item.count===0?'hidden sm:flex':'flex'} -mx-2 items-center justify-between gap-3 rounded-lg px-2 py-0.5 text-sm transition-colors duration-150 ${activeFacility===item.key?'bg-neutral-soft font-semibold':''}`}><span className="flex min-w-0 items-center gap-2"><i className={`size-3 shrink-0 rounded-sm transition-transform duration-150 ${activeFacility===item.key?'scale-125':''}`} style={{backgroundColor:donutColors[index%donutColors.length]}}/><span className="truncate">{item.label}</span></span><strong data-numeric><CountUp value={item.count} duration={1100}/></strong></li>)}</ul></div></CardBody></Card>
         <DepartmentRanking bookings={bookings} />
       </section>
+
+      <RoomStatusNow rooms={rooms} refreshKey={refreshKey} />
 
       {/* ประกาศอยู่ใต้กราฟ เพื่อให้เปิดหน้ามาแล้วเห็นกราฟทันที */}
       <AnnouncementsPanel refreshKey={refreshKey} />

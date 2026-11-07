@@ -1,11 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HashRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../app/App';
 import { AppProvider } from '../app/providers/AppProvider';
 import { ToastProvider } from '../components/ui/Toast';
-import { dayOfWeekOfDateKey, toDateKey } from '@shared/time/bangkok';
+import { addDaysToDateKey, dayOfWeekOfDateKey, toDateKey } from '@shared/time/bangkok';
 import { DEMO_LOGINS } from '../lib/api/demo';
 
 /**
@@ -731,5 +731,47 @@ describe('รีวิวห้องหลังใช้งาน', () => {
     expect(within(teacher.nav).queryByRole('link', { name: 'รีวิวห้องประชุม' })).toBeNull();
     window.location.hash = '#/reviews';
     await waitFor(() => expect(screen.queryByRole('heading', { level: 1, name: 'รีวิวห้องประชุม' })).toBeNull());
+  });
+});
+
+describe('รายงานสรุปและสถานะห้องตอนนี้', () => {
+  it('ผู้ดูแลดูรายงานตามช่วงที่กำหนด แล้วส่งออกเป็นไฟล์ Excel ได้', async () => {
+    const { user, nav } = await openApp();
+    await goTo(user, nav, 'รายงานสรุป');
+    await user.click(screen.getByRole('radio', { name: 'กำหนดเอง' }));
+    const today = toDateKey(new Date());
+    fireEvent.change(screen.getByLabelText('ตั้งแต่วันที่'), { target: { value: addDaysToDateKey(today, -7) } });
+    fireEvent.change(screen.getByLabelText('ถึงวันที่'), { target: { value: addDaysToDateKey(today, 7) } });
+    // ข้อมูลตั้งต้น: อนุมัติแล้ว 4 รายการ + ประชุมไปแล้ว 3 รายการ (รออนุมัติ/ยกเลิกไม่นับ)
+    expect(await screen.findByText('7 ครั้ง', {}, { timeout: 3000 })).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'แยกตามห้องประชุม' })).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText('ห้องประชุม', { selector: 'select' }), { target: { value: 'demo-room-1' } });
+    expect(await screen.findByText('3 ครั้ง')).toBeDefined();
+
+    const created: Blob[] = [];
+    const createUrl = vi.fn((blob: Blob) => { created.push(blob); return 'blob:report'; });
+    Object.assign(URL, { createObjectURL: createUrl, revokeObjectURL: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    await user.click(screen.getByRole('button', { name: 'ส่งออก Excel' }));
+    expect(created[0]?.type).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(click).toHaveBeenCalled();
+    click.mockRestore();
+  });
+
+  it('พนักงานไม่เห็นเมนูรายงานสรุปและเข้าตรงไม่ได้', async () => {
+    const { nav } = await openApp('teacher');
+    expect(within(nav).queryByRole('link', { name: 'รายงานสรุป' })).toBeNull();
+    window.location.hash = '#/summary';
+    await waitFor(() => expect(screen.queryByRole('heading', { level: 1, name: 'รายงานสรุปการใช้ห้อง' })).toBeNull());
+  });
+
+  it('หน้าภาพรวมบอกสถานะห้องตอนนี้ทุกห้อง รวมถึงพนักงาน', async () => {
+    await openApp('teacher');
+    const panel = (await screen.findByRole('heading', { name: 'สถานะห้องตอนนี้' }, { timeout: 3000 })).closest('section, div.rounded-card, [class*="card"]') ?? document.body;
+    await waitFor(() => expect(within(panel as HTMLElement).getByText(/กำลังใช้ \d+ ห้อง · ว่าง \d+ ห้อง/)).toBeDefined(), { timeout: 3000 });
+    expect(within(panel as HTMLElement).getByText('หอประชุมอดิเรกสาร')).toBeDefined();
+    // ห้อง "อื่น ๆ (ระบุสถานที่)" ไม่ใช่ห้องจริง ไม่ต้องบอกสถานะ
+    expect(within(panel as HTMLElement).queryByText('อื่น ๆ (ระบุสถานที่)')).toBeNull();
   });
 });

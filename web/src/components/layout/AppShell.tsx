@@ -5,7 +5,7 @@ import { BottomNav } from './BottomNav';
 import { Topbar } from './Topbar';
 
 /**
- * โครงหน้าเว็บ: จอใหญ่ใช้เมนูแถบบน (หุบ/กางได้ ดู TopNav) / มือถือใช้เมนูด้านล่าง
+ * โครงหน้าเว็บ: จอใหญ่ใช้เมนูแถบบน (ดู TopNav) / มือถือใช้เมนูด้านล่าง
  */
 export function AppShell() {
   const { user } = useApp();

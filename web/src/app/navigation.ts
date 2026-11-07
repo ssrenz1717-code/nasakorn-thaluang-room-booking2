@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   CalendarDays,
   CalendarPlus,
   ClipboardList,
@@ -29,6 +30,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/my-bookings', label: 'รายการจองของฉัน', icon: ClipboardList, mobile: 'bar' },
   { path: '/rooms', label: 'ห้องประชุม', icon: DoorOpen },
   { path: '/approvals', label: 'อนุมัติการใช้ห้อง', icon: ClipboardCheck, roles: ['admin', 'inspector', 'endorser', 'director'] },
+  { path: '/summary', label: 'รายงานสรุป', icon: BarChart3, roles: ['admin', 'inspector', 'endorser', 'director'] },
   { path: '/reviews', label: 'รีวิวห้องประชุม', icon: Star, roles: ['admin'] },
   { path: '/reports', label: 'พิมพ์แบบฟอร์ม A4', icon: ClipboardList },
   { path: '/users', label: 'จัดการผู้ใช้', icon: UsersRound, roles: ['admin'] },

@@ -49,6 +49,7 @@ var Domain = (() => {
     PIN_LOGIN_FAILURE_LIMIT_PER_HOUR: () => PIN_LOGIN_FAILURE_LIMIT_PER_HOUR,
     PIN_MAX_FAILURES: () => PIN_MAX_FAILURES,
     PIN_TAKEN_MESSAGE: () => PIN_TAKEN_MESSAGE,
+    REPORT_COUNTED_STATUSES: () => REPORT_COUNTED_STATUSES,
     REQUEST_FACILITIES: () => REQUEST_FACILITIES,
     REQUEST_FACILITY_LABEL_TH: () => REQUEST_FACILITY_LABEL_TH,
     REVIEW_ASPECTS: () => REVIEW_ASPECTS,
@@ -81,11 +82,13 @@ var Domain = (() => {
     activeAnnouncements: () => activeAnnouncements,
     activeLookups: () => activeLookups,
     addDaysToDateKey: () => addDaysToDateKey,
+    approvedSlotsOn: () => approvedSlotsOn,
     asRecord: () => asRecord,
     assertTransition: () => assertTransition,
     bookableDayCount: () => bookableDayCount,
     bookedMinutesWithin: () => bookedMinutesWithin,
     buildHeaderMap: () => buildHeaderMap,
+    buildReport: () => buildReport,
     businessWindow: () => businessWindow,
     busySlotsFor: () => busySlotsFor,
     canCancelBooking: () => canCancelBooking,
@@ -102,6 +105,7 @@ var Domain = (() => {
     currentApprovalStep: () => currentApprovalStep,
     dateKeyRange: () => dateKeyRange,
     dayOfWeekOfDateKey: () => dayOfWeekOfDateKey,
+    daysInRange: () => daysInRange,
     decideApprovalStep: () => decideApprovalStep,
     defaultLookups: () => defaultLookups,
     findConflicts: () => findConflicts,
@@ -119,9 +123,12 @@ var Domain = (() => {
     isStartBlocked: () => isStartBlocked,
     keyValueToObject: () => keyValueToObject,
     lastAdminProblem: () => lastAdminProblem,
+    liveRoomState: () => liveRoomState,
     lookupLabel: () => lookupLabel,
+    matchesReportFilter: () => matchesReportFilter,
     mergeIntervals: () => mergeIntervals,
     missingColumns: () => missingColumns,
+    monthsBetween: () => monthsBetween,
     newLookupKey: () => newLookupKey,
     normalizeDateKey: () => normalizeDateKey,
     normalizeUserRole: () => normalizeUserRole,
@@ -139,6 +146,7 @@ var Domain = (() => {
     readNumber: () => readNumber,
     readSettingsOrDefault: () => readSettingsOrDefault,
     readString: () => readString,
+    reportRange: () => reportRange,
     reviewEligibility: () => reviewEligibility,
     roleForStep: () => roleForStep,
     rowToObject: () => rowToObject,
@@ -1037,8 +1045,8 @@ var Domain = (() => {
   }
   function toDateKey(instant, timeZone = BANGKOK_TZ) {
     const p = zonedParts(instant, timeZone);
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${p.year}-${pad(p.month)}-${pad(p.day)}`;
+    const pad2 = (n) => String(n).padStart(2, "0");
+    return `${p.year}-${pad2(p.month)}-${pad2(p.day)}`;
   }
   function normalizeDateKey(value, timeZone = BANGKOK_TZ) {
     var _a;
@@ -1084,8 +1092,8 @@ var Domain = (() => {
   function addDaysToDateKey(dateKey, days) {
     const { year, month, day } = parseDateKey(dateKey);
     const shifted = new Date(Date.UTC(year, month - 1, day) + days * 864e5);
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`;
+    const pad2 = (n) => String(n).padStart(2, "0");
+    return `${shifted.getUTCFullYear()}-${pad2(shifted.getUTCMonth() + 1)}-${pad2(shifted.getUTCDate())}`;
   }
   function countDaysInclusive(fromDateKey, toDateKey_) {
     const a = parseDateKey(fromDateKey);
@@ -1852,6 +1860,109 @@ var Domain = (() => {
       for (const aspect of REVIEW_ASPECTS) summary[aspect] = round1(total[aspect] / total.count);
       return summary;
     });
+  }
+
+  // shared/domain/report.ts
+  var REPORT_COUNTED_STATUSES = ["confirmed", "completed"];
+  var pad = (value) => String(value).padStart(2, "0");
+  function lastDayOfMonth(month) {
+    const [year, mon] = month.split("-").map(Number);
+    return `${month}-${pad(new Date(Date.UTC(year, mon, 0)).getUTCDate())}`;
+  }
+  function reportRange(period) {
+    switch (period.kind) {
+      case "month":
+        return { from: `${period.month}-01`, to: lastDayOfMonth(period.month) };
+      case "year":
+        return { from: `${period.year}-01-01`, to: `${period.year}-12-31` };
+      case "fiscalYear":
+        return { from: `${period.year - 1}-10-01`, to: `${period.year}-09-30` };
+      case "custom":
+        return period.from <= period.to ? { from: period.from, to: period.to } : { from: period.to, to: period.from };
+    }
+  }
+  function monthsBetween(from, to) {
+    const months = [];
+    let [year, month] = from.slice(0, 7).split("-").map(Number);
+    const end = to.slice(0, 7);
+    while (months.length < 60) {
+      const key = `${year}-${pad(month)}`;
+      if (key > end) break;
+      months.push(key);
+      month += 1;
+      if (month > 12) {
+        month = 1;
+        year += 1;
+      }
+    }
+    return months;
+  }
+  function matchesReportFilter(booking, filter) {
+    var _a;
+    return booking.dateKey >= filter.from && booking.dateKey <= filter.to && (filter.roomId === "" || booking.roomId === filter.roomId) && (filter.department === "" || booking.department.trim() === filter.department) && (filter.meetingType === "" || ((_a = booking.meetingType) != null ? _a : "") === filter.meetingType);
+  }
+  function group(rows, keyOf, seed = []) {
+    var _a;
+    const groups = new Map(seed.map((key) => [key, { key, count: 0, minutes: 0, attendees: 0 }]));
+    for (const row of rows) {
+      const key = keyOf(row);
+      const item = (_a = groups.get(key)) != null ? _a : { key, count: 0, minutes: 0, attendees: 0 };
+      item.count += 1;
+      item.minutes += Math.max(0, row.endMin - row.startMin);
+      item.attendees += Math.max(0, Number(row.attendees) || 0);
+      groups.set(key, item);
+    }
+    return [...groups.values()];
+  }
+  var byUsage = (a, b) => b.count - a.count || b.minutes - a.minutes || a.key.localeCompare(b.key);
+  function buildReport(bookings, filter) {
+    var _a;
+    const inScope = bookings.filter((booking) => matchesReportFilter(booking, filter));
+    const byStatus = Object.fromEntries(BOOKING_STATUSES.map((status) => [status, 0]));
+    for (const booking of inScope) {
+      if (booking.status in byStatus) byStatus[booking.status] += 1;
+    }
+    const rows = inScope.filter((booking) => REPORT_COUNTED_STATUSES.includes(booking.status)).sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.startMin - b.startMin);
+    const totals = (_a = group(rows, () => "all")[0]) != null ? _a : { count: 0, minutes: 0, attendees: 0 };
+    return {
+      count: totals.count,
+      minutes: totals.minutes,
+      attendees: totals.attendees,
+      byStatus,
+      byRoom: group(rows, (row) => row.roomId).sort(byUsage),
+      byDepartment: group(rows, (row) => row.department.trim()).sort(byUsage),
+      byMeetingType: group(rows, (row) => {
+        var _a2;
+        return (_a2 = row.meetingType) != null ? _a2 : "";
+      }).sort(byUsage),
+      byMonth: group(rows, (row) => row.dateKey.slice(0, 7), monthsBetween(filter.from, filter.to)).sort((a, b) => a.key.localeCompare(b.key)),
+      rows
+    };
+  }
+  function daysInRange(from, to) {
+    let count = 0;
+    for (let key = from; key <= to && count < 3700; key = addDaysToDateKey(key, 1)) count += 1;
+    return count;
+  }
+
+  // shared/domain/room-status.ts
+  function approvedSlotsOn(rows, dateKey) {
+    return rows.filter((row) => normalizeDateKey(row.dateKey) === dateKey && REPORT_COUNTED_STATUSES.includes(String(row.status))).map((row) => ({ roomId: String(row.roomId), startMin: Number(row.startMin), endMin: Number(row.endMin) })).filter((slot) => Number.isFinite(slot.startMin) && Number.isFinite(slot.endMin) && slot.endMin > slot.startMin).sort((a, b) => a.startMin - b.startMin);
+  }
+  function liveRoomState(room, slots, nowMin) {
+    var _a;
+    if (room.status !== "active") return { kind: "closed" };
+    const mine = slots.filter((slot) => slot.roomId === room.roomId).sort((a, b) => a.startMin - b.startMin);
+    const current = mine.find((slot) => slot.startMin <= nowMin && nowMin < slot.endMin);
+    if (current !== void 0) {
+      let untilMin = current.endMin;
+      for (const slot of mine) {
+        if (slot.startMin <= untilMin && slot.endMin > untilMin) untilMin = slot.endMin;
+      }
+      return { kind: "busy", untilMin };
+    }
+    const next = mine.find((slot) => slot.startMin > nowMin);
+    return { kind: "free", nextStartMin: (_a = next == null ? void 0 : next.startMin) != null ? _a : null };
   }
   return __toCommonJS(index_exports);
 })();

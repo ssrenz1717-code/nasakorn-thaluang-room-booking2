@@ -7,6 +7,7 @@ import type { UserAccountInput } from '@shared/schemas/user';
 import type { DemoBooking, DemoRoom } from './demo';
 import type { BookingRequest } from '@shared/schemas/booking';
 import type { BusySlot } from '@shared/domain/availability';
+import type { DaySlot } from '@shared/domain/room-status';
 import type { Announcement, AnnouncementInput } from '@shared/schemas/announcement';
 import type { LookupInput, LookupItem } from '@shared/schemas/lookup';
 import type { RoomInput } from '@shared/schemas/room';
@@ -50,6 +51,8 @@ export interface ApiClient {
   bookings(token: string, from?: string, to?: string): Promise<{ bookings: DemoBooking[] }>;
   /** ช่วงเวลาที่ห้องถูกจองไว้ในวันนั้น (ไม่มีชื่อ/หัวข้อของใคร ทุกคนดูได้) */
   availability(token: string, roomId: string, dateKey: string): Promise<{ busy: BusySlot[] }>;
+  /** ช่วงที่อนุมัติแล้วของทุกห้องวันนี้ (ไม่มีชื่อ/หัวข้อ) — สถานะห้องตอนนี้ในหน้าภาพรวม */
+  roomSlotsToday(token: string): Promise<{ dateKey: string; slots: DaySlot[] }>;
   createBooking(token: string, input: BookingRequest): Promise<{ booking: DemoBooking }>;
   cancelBooking(token: string, bookingId: string, reason?: string): Promise<{ booking: DemoBooking }>;
   /** ลงนาม — ต้องแนบ PIN ของผู้ลงนามทุกครั้ง (แทนลายเซ็น) */
@@ -94,6 +97,7 @@ function wrap(transport: Transport): ApiClient {
     rooms: (token) => transport.call('rooms', {}, token),
     bookings: (token, from, to) => transport.call('bookings', { from, to }, token),
     availability: (token, roomId, dateKey) => transport.call('availability', { roomId, dateKey }, token),
+    roomSlotsToday: (token) => transport.call('roomSlotsToday', {}, token),
     createBooking: (token, input) => announceBookingsChanged(transport.call('createBooking', input, token)),
     cancelBooking: (token, bookingId, reason = '') => announceBookingsChanged(transport.call('cancelBooking', { bookingId, reason }, token)),
     decideBooking: (token, bookingId, decision, pin, reason = '') => announceBookingsChanged(transport.call('decideBooking', { bookingId, decision, reason, pin }, token)),

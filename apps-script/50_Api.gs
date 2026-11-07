@@ -101,6 +101,7 @@ function apiHandlers_() {
     },
     rooms: function (payload, token) { return listRooms_(authenticate_(token)); },
     bookings: function (payload, token) { return listBookings_(authenticate_(token), payload || {}); },
+    roomSlotsToday: function (payload, token) { authenticate_(token); return roomSlotsToday_(); },
     availability: function (payload, token) { return roomAvailability_(authenticate_(token), payload || {}); },
     createBooking: function (payload, token) { return createBooking_(authenticate_(token), payload); },
     cancelBooking: function (payload, token) { return cancelBooking_(authenticate_(token), payload || {}); },

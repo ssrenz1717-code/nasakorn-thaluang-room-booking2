@@ -10,12 +10,20 @@ import { ApprovalsPage, PrintFormPage } from '../features/ApprovalReportPages';
 import { UsersPage } from '../features/users/UsersPage';
 import { ManagePage } from '../features/manage/ManagePage';
 import { ReviewsPage } from '../features/reviews/ReviewsPage';
+import { ReportsPage } from '../features/reports/ReportsPage';
+import { canSeeAllBookings } from '@shared/domain/approval';
 import { useApp } from './providers/AppProvider';
 
 /** หน้าของผู้ดูแลเท่านั้น — คนอื่นพิมพ์ URL เข้ามาเองจะถูกพากลับหน้าภาพรวม (server ตรวจสิทธิ์ซ้ำทุกคำสั่งอยู่แล้ว) */
 function AdminOnly({ children }: { children: ReactNode }) {
   const { user } = useApp();
   return user?.role === 'admin' ? children : <Navigate to="/" replace />;
+}
+
+/** หน้าที่ต้องเห็นการจองทุกคน (ผู้ดูแลและผู้ลงนาม) */
+function AllBookingsOnly({ children }: { children: ReactNode }) {
+  const { user } = useApp();
+  return user !== null && canSeeAllBookings(user.role) ? children : <Navigate to="/" replace />;
 }
 
 export function App() {
@@ -42,6 +50,7 @@ export function App() {
         <Route path="/approvals" element={<ApprovalsPage />} />
         <Route path="/reports" element={<PrintFormPage />} />
         <Route path="/users" element={<AdminOnly><UsersPage /></AdminOnly>} />
+        <Route path="/summary" element={<AllBookingsOnly><ReportsPage /></AllBookingsOnly>} />
         <Route path="/reviews" element={<AdminOnly><ReviewsPage /></AdminOnly>} />
         <Route path="/manage" element={<AdminOnly><ManagePage /></AdminOnly>} />
         {/*

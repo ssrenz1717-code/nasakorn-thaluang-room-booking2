@@ -1,6 +1,8 @@
 @import 'tailwindcss';
 
 @page { size: A4 portrait; margin: 0; }
+/* รายงานสรุปใช้ขอบกระดาษปกติ (แบบฟอร์มคุมขอบเอง) */
+@page report { size: A4 portrait; margin: 12mm; }
 
 .print-value { display: inline-block; min-width: 3rem; border-bottom: 1px dotted var(--color-print-rule); padding: 0 0.25rem; line-height: 1.5; }
 
@@ -20,6 +22,13 @@
   .form-sheet.print-sheet { width: 210mm !important; min-height: 0 !important; padding: 14mm 18mm 10mm !important; }
   .print-scale { transform: none !important; height: auto !important; }
   .no-print { display: none !important; }
+  /* รายงานสรุปหลายหน้า: ขอบกระดาษจาก @page ไม่ตัดตาราง/การ์ดกลางหน้า และพิมพ์สีแท่งกราฟด้วย */
+  .report-sheet.print-sheet { position: static !important; page: report; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  /* หน้ารายงานไหลต่อหลายหน้า: เอาแถบเมนูและระยะขอบของโครงหน้าออก ไม่ให้เหลือที่ว่างหัวกระดาษ */
+  html:has(.report-sheet) .app-chrome { display: none !important; }
+  html:has(.report-sheet) main { padding: 0 !important; }
+  .report-sheet .avoid-break { break-inside: avoid; }
+  .report-sheet [class*="shadow"] { box-shadow: none !important; }
   /* ส่วนที่ซ่อนไว้ยังกินพื้นที่ ทำให้มีหน้าว่างต่อท้าย — แบบฟอร์มมีหน้าเดียว ตัดที่ 1 หน้า A4 */
   html:has(.form-sheet), html:has(.form-sheet) body { height: 297mm !important; overflow: hidden !important; }
 }

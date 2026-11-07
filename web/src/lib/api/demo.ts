@@ -17,6 +17,7 @@ import { validateBookingRules } from '@shared/domain/booking-rules';
 import { findConflicts } from '@shared/domain/overlap';
 import { readLocal, writeLocal } from '../storage';
 import { busySlotsFor } from '@shared/domain/availability';
+import { approvedSlotsOn } from '@shared/domain/room-status';
 import { ApiError, type AdminUser, type SessionUser, type Transport, type VersionResult } from './types';
 import { activeAnnouncements, validateAnnouncementInput, type Announcement } from '@shared/schemas/announcement';
 import { canSeeAllBookings, decideApprovalStep, type ApprovalEntry } from '@shared/domain/approval';
@@ -559,6 +560,11 @@ export function createDemoTransport(): Transport {
       if (!parsed.ok) throw new ApiError('VALIDATION', parsed.issues.map((issue) => issue.message).join(' '), parsed.issues);
       if (isOpenLocationRoom(state.rooms.find((room) => room.roomId === parsed.value.roomId))) return { busy: [] };
       return { busy: busySlotsFor(state.bookings, parsed.value.roomId, parsed.value.dateKey) };
+    },
+    roomSlotsToday: (_payload, token) => {
+      userFromToken(token);
+      const dateKey = toDateKey(new Date());
+      return { dateKey, slots: approvedSlotsOn(state.bookings, dateKey) };
     },
     createBooking: (payload: unknown, token) => {
       const user = userFromToken(token);

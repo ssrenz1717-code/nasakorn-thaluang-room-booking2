@@ -190,3 +190,14 @@ function decideBooking_(user, raw) {
     return { booking: publicBooking_(Object.assign({}, row, patch)), nextStep: result.nextStep };
   });
 }
+
+/**
+ * ช่วงเวลาที่อนุมัติแล้วของทุกห้องในวันนี้ — ให้หน้าภาพรวมบอกว่าห้องไหนกำลังใช้/ว่าง
+ * มีแค่ห้องกับเวลา (ไม่มีชื่อหรือหัวข้อ) ทุกคนที่ล็อกอินดูได้ อ่านแค่คอลัมน์ hot จึงเร็ว
+ */
+function roomSlotsToday_() {
+  const dateKey = Domain.toDateKey(serverNow_());
+  const rows = readHotColumns_(Domain.SHEET_BOOKINGS, Domain.BOOKING_HOT_COLUMNS).objects;
+  return { dateKey: dateKey, slots: Domain.approvedSlotsOn(rows, dateKey) };
+}
+
